@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-graph UI mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#0f1216; --panel:#151a20; --panel2:#1a2027; --line:#242b34;
+  --text:#d9dfe7; --muted:#8b95a3; --faint:#66707d;
+  --accent:#6cb0f0;
+  --l0:#6cb0f0; --l1:#58c98b; --l2:#e0a84f; --l3:#d585d0; --l4:#55c6c0; --l5:#9a8cf0;
+  --warn:#e0a84f; --danger:#e07a7a; --ok:#58c98b;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",Inter,"Noto Sans TC",sans-serif;
+  font-size:13.5px; line-height:1.5;
+}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.wrap{max-width:780px;margin:0 auto;padding:14px 16px 60px}
+
+/* ── header ── */
+header{display:flex;align-items:baseline;gap:10px;padding:6px 2px 12px;flex-wrap:wrap}
+header h1{font-size:17px;font-weight:800;letter-spacing:-.02em;margin:0}
+header h1 .dim{color:var(--muted);font-weight:500}
+.hstat{color:var(--muted);font-size:12px;display:flex;gap:12px;align-items:center;margin-left:auto}
+.dot-live{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px;box-shadow:0 0 6px var(--ok)}
+
+/* ── filter chips ── */
+.chips{display:flex;gap:8px;margin:2px 0 14px}
+.chip{padding:3px 12px;border-radius:99px;border:1px solid var(--line);color:var(--muted);font-size:12px;cursor:pointer}
+.chip.on{background:var(--panel2);color:var(--text);border-color:#31506e}
+
+/* ── repo card ── */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.card-h{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer}
+.card-h .pin{color:var(--accent);font-size:12px}
+.card-h .name{font-weight:700;letter-spacing:-.01em}
+.card-h .head{font-size:11.5px;color:var(--accent);background:#1b2836;border:1px solid #2a3d52;border-radius:6px;padding:1px 8px}
+.card-h .meta{color:var(--muted);font-size:12px;margin-left:auto;display:flex;gap:10px;align-items:center;white-space:nowrap}
+.badge{font-size:11px;border-radius:6px;padding:1px 7px;white-space:nowrap}
+.b-ahead{color:#8ec2f5;background:#18293b}
+.b-dirty{color:#f0c98a;background:#332a18}
+.b-div{color:#f0a0a0;background:#361f1f}
+.b-ok{color:#84d8a5;background:#16301f}
+.b-stale{color:var(--muted);background:#20262e}
+
+/* ── graph area ── */
+.graph{position:relative;border-top:1px solid var(--line);background:var(--panel)}
+.graph svg{position:absolute;top:0;left:10px;pointer-events:none}
+.rows{position:relative}
+.row{display:flex;align-items:center;gap:8px;height:34px;padding-right:12px;border-top:1px solid #1a2027}
+.row:first-child{border-top:none}
+.row:hover{background:#181e26}
+.row .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);flex:1;min-width:60px}
+.row .sub.merge{color:var(--muted)}
+.row .sha{color:var(--faint);font-size:11px;flex-shrink:0}
+.row .age{color:var(--faint);font-size:11px;width:44px;text-align:right;flex-shrink:0}
+.bch{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;font-weight:600;border-radius:6px;padding:1.5px 8px;flex-shrink:0;border:1px solid transparent}
+.wt{font-size:11px;color:var(--muted);flex-shrink:0}
+.sess{font-size:10.5px;flex-shrink:0}
+.sess.live{color:var(--ok)} .sess.idle{color:var(--faint)}
+.push{font-size:11px;color:#0f1216;background:var(--accent);border:none;border-radius:6px;padding:2.5px 10px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit}
+.push:hover{background:#8ec2f5}
+
+/* ── quiet repos ── */
+.quiet-row{display:flex;align-items:center;gap:10px;padding:8px 14px;color:var(--muted);font-size:12.5px;border-top:1px solid #1a2027}
+.quiet-row:first-child{border-top:none}
+.quiet-row .name{color:var(--text);font-weight:500}
+.quiet-row .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.fold{padding:9px 14px;color:var(--faint);font-size:12px;cursor:pointer}
+
+/* ── push dialog ── */
+.dlg-note{margin:26px 2px 8px;color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.08em}
+.dlg{background:var(--panel2);border:1px solid #2a3d52;border-radius:14px;padding:16px 18px;max-width:560px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.dlg h3{margin:0 0 4px;font-size:14.5px;font-weight:700}
+.dlg .to{color:var(--muted);font-size:12px;margin-bottom:12px}
+.dlg .to .mono{color:var(--text)}
+.cmt{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px}
+.cmt .sha{color:var(--accent);font-size:11px}
+.dlg .hint{margin-top:10px;font-size:12px;color:var(--warn);background:#2a2314;border-radius:8px;padding:7px 11px}
+.dlg .btns{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+.btn{border-radius:8px;padding:6px 16px;font-size:13px;border:1px solid var(--line);background:none;color:var(--muted);cursor:pointer;font-family:inherit}
+.btn.primary{background:var(--accent);color:#0f1216;font-weight:700;border-color:transparent}
+
+/* ── legend ── */
+.legend{margin-top:26px;color:var(--faint);font-size:11.5px;display:flex;gap:16px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>git-graph <span class="dim">· ~/projects</span></h1>
+  <div class="hstat">
+    <span>38 repos</span>
+    <span>⟳ fetch 2 分前</span>
+    <span><span class="dot-live"></span>即時</span>
+  </div>
+</header>
+
+<div class="chips">
+  <div class="chip on">有動靜 6</div>
+  <div class="chip">已釘選 2</div>
+  <div class="chip">全部 38</div>
+</div>
+
+<!-- ═══ 展開的 repo ═══ -->
+<div class="card">
+  <div class="card-h">
+    <span class="pin">📌</span>
+    <span class="name">hydrogen/server</span>
+    <span class="head mono">feat-abyss</span>
+    <div class="meta">
+      <span>7 worktrees</span>
+      <span class="badge b-dirty">✎ 1 未 commit</span>
+      <span class="badge b-ahead">↑ 4 未推</span>
+      <span class="badge b-div">⚠ 1 分岔</span>
+    </div>
+  </div>
+  <div class="graph" id="g1"></div>
+</div>
+
+<!-- ═══ 收合的活動 repo ═══ -->
+<div class="card">
+  <div class="card-h">
+    <span class="pin" style="opacity:.25">📌</span>
+    <span class="name">hydrogen/unrelay</span>
+    <span class="head mono">main</span>
+    <div class="meta"><span>3 worktrees</span><span class="badge b-ahead">↑ 2 未推</span><span class="sess idle">○ 2d</span></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-h">
+    <span class="pin" style="opacity:.25">📌</span>
+    <span class="name">hydrogen/gitops</span>
+    <span class="head mono">main</span>
+    <div class="meta"><span>2 worktrees</span><span class="badge b-ahead">↑ 1 未推</span><span class="sess live">● 活躍</span></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-h">
+    <span class="pin" style="opacity:.25">📌</span>
+    <span class="name">hydrogen/excel</span>
+    <span class="head mono">main</span>
+    <div class="meta"><span>2 worktrees</span><span class="badge b-ok">✓ 乾淨</span></div>
+  </div>
+</div>
+
+<!-- ═══ 安靜的 repo ═══ -->
+<div class="card">
+  <div class="quiet-row"><span class="name">backlogs</span><span class="mono" style="font-size:11px">main</span><div class="right"><span class="badge b-ok">✓</span><span>3d</span></div></div>
+  <div class="quiet-row"><span class="name">claude-config</span><span class="mono" style="font-size:11px">main</span><div class="right"><span class="badge b-ok">✓</span><span>5h</span></div></div>
+  <div class="quiet-row"><span class="name">content-registry/api</span><span class="mono" style="font-size:11px">main</span><div class="right"><span class="badge b-ok">✓</span><span>12d</span></div></div>
+  <div class="fold">▾ 其餘 29 個安靜的 repo</div>
+</div>
+
+<!-- ═══ 推送確認框（設計示意，實際為浮出的 modal） ═══ -->
+<div class="dlg-note">推送確認框 · 實際以 modal 浮出</div>
+<div class="dlg">
+  <h3>推送 <span class="mono" style="color:var(--l1)">feat-abyss-b6</span></h3>
+  <div class="to">→ <span class="mono">origin</span> <span style="opacity:.7">(gitlab.dev.baasgames.com:hydrogen/core/server)</span></div>
+  <div class="cmt"><span class="sha mono">2760a7e</span><span>abyss: b6 波次節奏調參</span></div>
+  <div class="cmt"><span class="sha mono">8f31c02</span><span>abyss: 深淵入口 dedicatedEntry 旗標收斂</span></div>
+  <div class="hint">此分支尚無 upstream，將以 <span class="mono">-u</span> 建立 <span class="mono">origin/feat-abyss-b6</span></div>
+  <div class="btns"><button class="btn">取消</button><button class="btn primary">推送 2 個 commit</button></div>
+</div>
+
+<div class="legend">
+  <span>● session 活躍</span><span>○ 閒置（時間=最後活動）</span><span>⌂ worktree</span>
+  <span>✎ 未 commit</span><span>↑ 未推</span><span>⚠ 與遠端分岔</span><span>✓ 已合併/乾淨</span>
+</div>
+
+</div>
+
+<script>
+// ── 假資料：照 hydrogen/server 的真實分支狀況編排 ──
+// lane 由後端演算法指派；tip 物件描述分支尖端的徽章。
+const COMMITS = [
+ {sha:"2760a7e", lane:1, par:["8f31c02"], sub:"abyss: b6 波次節奏調參", age:"2h",
+  tip:{br:"feat-abyss-b6", wt:"abyss-b6", sess:"live", badges:["ahead:↑2 無upstream"], push:true}},
+ {sha:"8f31c02", lane:1, par:["c1799ec"], sub:"abyss: 深淵入口 dedicatedEntry 旗標收斂", age:"5h"},
+ {sha:"c1799ec", lane:0, par:["41aa9d2"], sub:"test: 開店即施放 e2e 收緊", age:"9h", head:true,
+  tip:{br:"feat-abyss", wt:"＋2 worktree", sess:"live", badges:["ahead:↑1"], push:true}},
+ {sha:"d3e03d0", lane:2, par:["9c21f70"], sub:"session: 架構重構筆記與骨架", age:"11h",
+  tip:{br:"worktree-session-architecture", wt:"session-architecture", sess:"idle:11h", badges:["ahead:無upstream"]}},
+ {sha:"41aa9d2", lane:0, par:["7e0c3b1","3f9d21c"], sub:"Merge branch 'feat-abyss-entry'", age:"1d", merge:true},
+ {sha:"3f9d21c", lane:5, par:["7e0c3b1"], sub:"abyss-entry: 專屬入口宣告式模式", age:"1d"},
+ {sha:"cfab9e8", lane:4, par:["9c21f70"], sub:"skill: buff 疊層與衰減", age:"3d",
+  tip:{br:"feature-skill-buff", wt:"feature-skill-buff", sess:"idle:3d", badges:["div:⚠ ↑1↓2"]}},
+ {sha:"b4d7da3", lane:3, par:["7e0c3b1"], sub:"deploy: readiness probe patch", age:"4d",
+  tip:{br:"worktree-deploy-ready-patch", wt:"deploy-ready-patch", sess:"idle:4d", badges:["dirty:✎ 未commit","ahead:無upstream"], push:true}},
+ {sha:"7e0c3b1", lane:0, par:["9c21f70"], sub:"core: session tick 拆分", age:"4d"},
+ {sha:"9c21f70", lane:0, par:["e7ece0a"], sub:"config: env id / tenant 註記", age:"5d"},
+ {sha:"e7ece0a", lane:0, par:["55010aa"], sub:"ci: misc services pipeline", age:"5d",
+  tip:{br:"worktree-misc-services-ci", wt:"misc-services-ci", sess:"idle:5d", badges:["ok:✓ 已合併"], remote:"origin/feat-abyss"}},
+ {sha:"55010aa", lane:0, par:[], sub:"release: v0.9.4", age:"8d",
+  tip:{br:"master", badges:[], remote:"origin/master"}},
+];
+const LC = ["#6cb0f0","#58c98b","#e0a84f","#d585d0","#55c6c0","#9a8cf0"];
+const RH = 34, X0 = 12, XW = 15;
+const idx = Object.fromEntries(COMMITS.map((c,i)=>[c.sha,i]));
+const maxLane = Math.max(...COMMITS.map(c=>c.lane));
+const gw = X0 + maxLane*XW + 14;
+
+function cx(c){return X0 + c.lane*XW}
+function cy(i){return i*RH + RH/2}
+
+let svg = "";
+// edges（先畫線再畫點）
+COMMITS.forEach((c,i)=>{
+  c.par.forEach(p=>{
+    const j = idx[p]; if(j===undefined) return;
+    const P = COMMITS[j];
+    const x1=cx(c), y1=cy(i), x2=cx(P), y2=cy(j);
+    const col = LC[(c.lane===P.lane? c.lane : Math.max(c.lane,P.lane))%LC.length];
+    if(x1===x2){ svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="2"/>`; }
+    else if(j-i===1){ // 相鄰列直接一段貝茲
+      svg += `<path d="M ${x1} ${y1} C ${x1} ${y1+RH*.7}, ${x2} ${y2-RH*.7}, ${x2} ${y2}" stroke="${col}" stroke-width="2" fill="none"/>`;
+    } else { // 先在自己 lane 直落，最後一列彎進父節點
+      const yb = cy(j-1);
+      svg += `<line x1="${x1}" y1="${y1}" x2="${x1}" y2="${yb}" stroke="${col}" stroke-width="2"/>`;
+      svg += `<path d="M ${x1} ${yb} C ${x1} ${yb+RH*.7}, ${x2} ${y2-RH*.7}, ${x2} ${y2}" stroke="${col}" stroke-width="2" fill="none"/>`;
+    }
+  });
+});
+// nodes
+COMMITS.forEach((c,i)=>{
+  const col = LC[c.lane%LC.length];
+  if(c.head) svg += `<circle cx="${cx(c)}" cy="${cy(i)}" r="7" fill="none" stroke="${col}" stroke-width="1.5" opacity=".55"/>`;
+  svg += `<circle cx="${cx(c)}" cy="${cy(i)}" r="${c.merge?3:4}" fill="${c.merge? '#0f1216':col}" stroke="${col}" stroke-width="2"/>`;
+});
+
+const rows = COMMITS.map((c,i)=>{
+  const col = LC[c.lane%LC.length];
+  let chips = "";
+  if(c.tip){
+    if(c.tip.br) chips += `<span class="bch" style="color:${col};background:${col}1a;border-color:${col}55">${c.tip.br}${c.head?' · HEAD':''}</span>`;
+    if(c.tip.remote) chips += `<span class="bch" style="color:var(--muted);background:#20262e">${c.tip.remote}</span>`;
+    if(c.tip.wt) chips += `<span class="wt">⌂ ${c.tip.wt}</span>`;
+    if(c.tip.sess) chips += c.tip.sess==="live" ? `<span class="sess live">●</span>` : `<span class="sess idle">○ ${c.tip.sess.split(":")[1]}</span>`;
+    (c.tip.badges||[]).forEach(b=>{const [k,t]=b.split(":"); chips += `<span class="badge b-${k==='ahead'?'ahead':k==='dirty'?'dirty':k==='div'?'div':'ok'}">${t}</span>`;});
+  }
+  const push = c.tip && c.tip.push ? `<button class="push">推送</button>` : "";
+  return `<div class="row" style="padding-left:${gw+10}px">${chips}<span class="sub${c.merge?' merge':''}">${c.sub}</span>${push}<span class="sha mono">${c.sha}</span><span class="age">${c.age}</span></div>`;
+}).join("");
+
+document.getElementById("g1").innerHTML =
+  `<svg width="${gw}" height="${COMMITS.length*RH}">${svg}</svg><div class="rows">${rows}</div>`;
+</script>
+</body>
+</html>

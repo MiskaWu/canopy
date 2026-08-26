@@ -5,6 +5,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"html/template"
@@ -81,6 +82,9 @@ func scan(root string) []Repo {
 	return repos
 }
 
+//go:embed mockup.html
+var mockupHTML []byte
+
 var page = template.Must(template.New("p").Parse(`<!doctype html>
 <meta charset="utf-8">
 <title>git-graph 骨架</title>
@@ -91,7 +95,7 @@ var page = template.Must(template.New("p").Parse(`<!doctype html>
   pre { background:#161c22; padding:.8rem 1rem; border-radius:8px; overflow-x:auto; font-size:.8rem; line-height:1.45; }
   .ok { color:#69c87e; }
 </style>
-<h1>git-graph <span class="ok">連通性驗證成功 ✓</span></h1>
+<h1>git-graph <span class="ok">連通性驗證成功 ✓</span> ・ <a href="/mockup" style="color:#7fb4e6">UI mockup →</a></h1>
 <p class="meta">root: {{.Root}} ・ 共 {{len .Repos}} 個 repo（worktree 已去重）</p>
 {{range .Repos}}
 <h2>{{.Name}}</h2>
@@ -116,6 +120,10 @@ func main() {
 		}{*root, scan(*root)}); err != nil {
 			log.Print(err)
 		}
+	})
+	http.HandleFunc("/mockup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(mockupHTML)
 	})
 	fmt.Printf("git-graph skeleton listening on http://%s (root=%s)\n", *addr, *root)
 	log.Fatal(http.ListenAndServe(*addr, nil))
