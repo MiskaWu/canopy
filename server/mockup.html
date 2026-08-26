@@ -63,7 +63,7 @@ header h1 .dim{color:var(--muted);font-weight:500}
 .wt{font-size:11px;color:var(--muted);flex-shrink:0}
 .sess{font-size:10.5px;flex-shrink:0}
 .sess.live{color:var(--ok)} .sess.idle{color:var(--faint)}
-.push{width:22px;height:20px;font-size:12px;line-height:1;color:#0f1216;background:var(--accent);border:none;border-radius:6px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
+.push{height:20px;padding:0 8px;font-size:11.5px;line-height:1;color:#0f1216;background:var(--accent);border:none;border-radius:6px;font-weight:700;cursor:pointer;font-family:"JetBrains Mono",ui-monospace,monospace;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
 .push:hover{background:#8ec2f5}
 
 /* ── quiet repos ── */
@@ -181,10 +181,10 @@ header h1 .dim{color:var(--muted);font-weight:500}
 // lane 由後端演算法指派；tip 物件描述分支尖端的徽章。
 const COMMITS = [
  {sha:"2760a7e", lane:1, par:["8f31c02"], sub:"abyss: b6 波次節奏調參", age:"2h",
-  tip:{br:"feat-abyss-b6", wt:"abyss-b6", sess:"live", badges:["ahead:↑2 無upstream"], push:true}},
+  tip:{br:"feat-abyss-b6", wt:"abyss-b6", sess:"live", aheadN:2, badges:["ahead:無upstream"], push:true}},
  {sha:"8f31c02", lane:1, par:["c1799ec"], sub:"abyss: 深淵入口 dedicatedEntry 旗標收斂", age:"5h"},
  {sha:"c1799ec", lane:0, par:["41aa9d2"], sub:"test: 開店即施放 e2e 收緊", age:"9h", head:true,
-  tip:{br:"feat-abyss", wt:"＋2 worktree", sess:"live", badges:["ahead:↑1"], push:true}},
+  tip:{br:"feat-abyss", wt:"＋2 worktree", sess:"live", aheadN:1, badges:[], push:true}},
  {sha:"d3e03d0", lane:2, par:["9c21f70"], sub:"session: 架構重構筆記與骨架", age:"11h",
   tip:{br:"worktree-session-architecture", wt:"session-architecture", sess:"idle:11h", badges:["ahead:無upstream"]}},
  {sha:"41aa9d2", lane:0, par:["7e0c3b1","3f9d21c"], sub:"Merge branch 'feat-abyss-entry'", age:"1d", merge:true},
@@ -192,7 +192,7 @@ const COMMITS = [
  {sha:"cfab9e8", lane:4, par:["9c21f70"], sub:"skill: buff 疊層與衰減", age:"3d",
   tip:{br:"feature-skill-buff", wt:"feature-skill-buff", sess:"idle:3d", badges:["div:⚠ ↑1↓2"]}},
  {sha:"b4d7da3", lane:3, par:["7e0c3b1"], sub:"deploy: readiness probe patch", age:"4d",
-  tip:{br:"worktree-deploy-ready-patch", wt:"deploy-ready-patch", sess:"idle:4d", badges:["dirty:✎ 未commit","ahead:無upstream"], push:true}},
+  tip:{br:"worktree-deploy-ready-patch", wt:"deploy-ready-patch", sess:"idle:4d", aheadN:1, badges:["dirty:✎ 未commit","ahead:無upstream"], push:true}},
  {sha:"7e0c3b1", lane:0, par:["9c21f70"], sub:"core: session tick 拆分", age:"4d"},
  {sha:"9c21f70", lane:0, par:["e7ece0a"], sub:"config: env id / tenant 註記", age:"5d"},
  {sha:"e7ece0a", lane:0, par:["55010aa"], sub:"ci: misc services pipeline", age:"5d",
@@ -239,7 +239,7 @@ const rows = COMMITS.map((c,i)=>{
   let chips = "";
   if(c.tip){
     if(c.tip.br) chips += `<span class="bch" style="color:${col};background:${col}1a;border-color:${col}55">${c.tip.br}${c.head?' · HEAD':''}</span>`;
-    if(c.tip.push) chips += `<button class="push" title="推送 ${c.tip.br}">↑</button>`;
+    if(c.tip.push) chips += `<button class="push" title="推送 ${c.tip.br}">↑${c.tip.aheadN||""}</button>`;
     if(c.tip.remote) chips += `<span class="bch" style="color:var(--muted);background:#20262e">${c.tip.remote}</span>`;
     if(c.tip.wt) chips += `<span class="wt">⌂ ${c.tip.wt}</span>`;
     if(c.tip.sess) chips += c.tip.sess==="live" ? `<span class="sess live">●</span>` : `<span class="sess idle">○ ${c.tip.sess.split(":")[1]}</span>`;
