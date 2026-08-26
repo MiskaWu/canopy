@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -100,7 +102,7 @@ func originAllowed(r *http.Request) bool {
 
 // ── handlers ────────────────────────────────────────────────
 
-func (s *Store) handleRepos(w http.ResponseWriter, r *http.Request) {
+func (s *Store) summaries() []Summary {
 	var sums []Summary
 	for _, repo := range s.allRepos() {
 		repo.mu.Lock()
@@ -115,6 +117,11 @@ func (s *Store) handleRepos(w http.ResponseWriter, r *http.Request) {
 		}
 		return sums[i].Name < sums[j].Name
 	})
+	return sums
+}
+
+func (s *Store) handleRepos(w http.ResponseWriter, r *http.Request) {
+	sums := s.summaries()
 	writeJSON(w, map[string]any{
 		"root":      s.root,
 		"lastFetch": s.lastFetch.Load(),
@@ -155,14 +162,29 @@ func (s *Store) handlePushPreview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "unknown branch")
 		return
 	}
+	pv := previewFor(repo.Path, br)
+	writeJSON(w, map[string]any{
+		"commits":    pv.Commits,
+		"noUpstream": pv.NoUpstream,
+		"upstream":   br.Upstream,
+		"remote":     remote,
+	})
+}
+
+type pushPreviewData struct {
+	Commits    []previewCommit `json:"commits"`
+	NoUpstream bool            `json:"noUpstream"`
+}
+
+func previewFor(repoPath string, br *Branch) pushPreviewData {
 	var rangeArgs []string
 	if br.NoUpstream || br.Gone {
-		rangeArgs = []string{"log", "--format=%h|%s", "-n", "50", "refs/heads/" + branch, "--not", "--remotes"}
+		rangeArgs = []string{"log", "--format=%h|%s", "-n", "50", "refs/heads/" + br.Name, "--not", "--remotes"}
 	} else {
-		rangeArgs = []string{"log", "--format=%h|%s", "-n", "50", br.Upstream + "..refs/heads/" + branch}
+		rangeArgs = []string{"log", "--format=%h|%s", "-n", "50", br.Upstream + "..refs/heads/" + br.Name}
 	}
 	var commits []previewCommit
-	for _, line := range strings.Split(git(repo.Path, rangeArgs...), "\n") {
+	for _, line := range strings.Split(git(repoPath, rangeArgs...), "\n") {
 		if line == "" {
 			continue
 		}
@@ -171,12 +193,59 @@ func (s *Store) handlePushPreview(w http.ResponseWriter, r *http.Request) {
 			commits = append(commits, previewCommit{f[0], f[1]})
 		}
 	}
-	writeJSON(w, map[string]any{
-		"commits":    commits,
-		"noUpstream": br.NoUpstream || br.Gone,
-		"upstream":   br.Upstream,
-		"remote":     remote,
-	})
+	return pushPreviewData{Commits: commits, NoUpstream: br.NoUpstream || br.Gone}
+}
+
+// bootData 是嵌進首頁 HTML 的啟動資料：靜態模式（Desktop 面板的殼，
+// 執行期無網路）就靠它渲染整個介面。
+type bootData struct {
+	Root        string                                `json:"root"`
+	LastFetch   int64                                 `json:"lastFetch"`
+	GeneratedAt int64                                 `json:"generatedAt"`
+	Repos       []Summary                             `json:"repos"`
+	Snapshots   map[string]*Snapshot                  `json:"snapshots"`
+	Previews    map[string]map[string]pushPreviewData `json:"previews"`
+}
+
+func (s *Store) makeIndexHandler(indexHTML []byte) http.HandlerFunc {
+	const marker = "window.__DATA__ = null;"
+	return func(w http.ResponseWriter, r *http.Request) {
+		bd := bootData{
+			Root: s.root, LastFetch: s.lastFetch.Load(), GeneratedAt: time.Now().Unix(),
+			Repos:     s.summaries(),
+			Snapshots: map[string]*Snapshot{},
+			Previews:  map[string]map[string]pushPreviewData{},
+		}
+		for _, id := range strings.Split(r.URL.Query().Get("open"), ",") {
+			repo := s.repo(id)
+			if repo == nil {
+				continue
+			}
+			repo.mu.Lock()
+			snap := repo.snapshot
+			repo.mu.Unlock()
+			if snap == nil {
+				continue
+			}
+			bd.Snapshots[id] = snap
+			pv := map[string]pushPreviewData{}
+			for i := range snap.Branches {
+				b := snap.Branches[i]
+				if b.Ahead > 0 && !snap.NoRemote {
+					pv[b.Name] = previewFor(snap.Path, &b)
+				}
+			}
+			bd.Previews[id] = pv
+		}
+		data, err := json.Marshal(bd) // json.Marshal 會轉義 <>&，嵌進 <script> 安全
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(bytes.Replace(indexHTML, []byte(marker), append([]byte("window.__DATA__ = "), data...), 1))
+	}
 }
 
 type pushReq struct {
@@ -194,18 +263,38 @@ func (s *Store) handlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req pushReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
+	var back string
+	if isForm {
+		if err := r.ParseForm(); err != nil {
+			writeErr(w, 400, "bad form")
+			return
+		}
+		req = pushReq{
+			ID: r.FormValue("id"), Branch: r.FormValue("branch"),
+			Remote: r.FormValue("remote"), ConfirmMain: r.FormValue("confirmMain") != "",
+		}
+		back = strings.TrimPrefix(r.FormValue("back"), "?")
+	} else if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, "bad request body")
 		return
 	}
+	// 表單模式的回應是導航：成敗都 303 回首頁，結果放 query 讓頁面顯示
+	fail := func(code int, msg string) {
+		if isForm {
+			http.Redirect(w, r, "/?"+back+"&pushErr="+url.QueryEscape(msg), http.StatusSeeOther)
+		} else {
+			writeErr(w, code, msg)
+		}
+	}
 	repo := s.repo(req.ID)
 	if repo == nil {
-		writeErr(w, 404, "unknown repo")
+		fail(404, "unknown repo")
 		return
 	}
 	br := findBranch(repo, req.Branch)
 	if br == nil {
-		writeErr(w, 404, "unknown branch")
+		fail(404, "unknown branch")
 		return
 	}
 	validRemote := false
@@ -219,11 +308,11 @@ func (s *Store) handlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	repo.mu.Unlock()
 	if !validRemote {
-		writeErr(w, 400, "unknown remote")
+		fail(400, "unknown remote")
 		return
 	}
 	if (req.Branch == "main" || req.Branch == "master") && !req.ConfirmMain {
-		writeErr(w, 400, "pushing main/master requires confirmMain")
+		fail(400, "pushing main/master requires confirmMain")
 		return
 	}
 	args := []string{"push"}
@@ -233,10 +322,14 @@ func (s *Store) handlePush(w http.ResponseWriter, r *http.Request) {
 	args = append(args, req.Remote, req.Branch)
 	out, err := gitRun(repo.Path, 60*time.Second, args...)
 	if err != nil {
-		writeErr(w, 502, strings.TrimSpace(out))
+		fail(502, strings.TrimSpace(out))
 		return
 	}
 	s.rebuild(req.ID)
+	if isForm {
+		http.Redirect(w, r, "/?"+back+"&pushed="+url.QueryEscape(req.Branch), http.StatusSeeOther)
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "output": strings.TrimSpace(out)})
 }
 

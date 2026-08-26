@@ -59,3 +59,14 @@ export function saveLS(key: string, value: unknown) {
     /* ignore */
   }
 }
+
+// 探測執行期網路能力：面板的殼會讓所有 fetch 立刻失敗，
+// 真瀏覽器則立即成功——以此決定走 live（fetch+SSE）或 static（嵌入資料＋導航）模式。
+export async function probeNetwork(): Promise<boolean> {
+  try {
+    const r = await fetch('/api/diag', { signal: AbortSignal.timeout(3000) })
+    return r.ok
+  } catch {
+    return false
+  }
+}
