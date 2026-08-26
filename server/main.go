@@ -19,6 +19,18 @@ import (
 //go:embed mockup.html
 var mockupHTML []byte
 
+//go:embed diag.html
+var diagHTML []byte
+
+// 1x1 透明 PNG，診斷頁測 <img> 子資源用
+var diagPNG = []byte{
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+	0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0xff, 0x3f,
+	0x03, 0x00, 0x08, 0xfc, 0x02, 0xfe, 0xa7, 0x35, 0x81, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+	0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+}
+
 //go:embed all:dist
 var webDist embed.FS
 
@@ -66,6 +78,23 @@ func main() {
 	mux.HandleFunc("/mockup", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(mockupHTML)
+	})
+	mux.HandleFunc("/diag", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(diagHTML)
+	})
+	mux.HandleFunc("/api/diag", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		fmt.Fprintf(w, "diag ok method=%s origin=%q", r.Method, r.Header.Get("Origin"))
+	})
+	mux.HandleFunc("/api/diag.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(diagPNG)
+	})
+	mux.HandleFunc("/api/diag.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, "window.__diagjs='loaded'")
 	})
 
 	dist, err := fs.Sub(webDist, "dist")
