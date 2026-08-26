@@ -7,6 +7,11 @@
 哪些還沒推」。canopy 掃描一個根目錄底下的所有 git repo，把這些狀態畫成一張
 即時的提交線圖，並讓你直接在面板上執行推送。
 
+![canopy 面板](docs/screenshot.png)
+
+> 畫面為示範資料（虛構 repo）。展開的線圖裡：HEAD 鏈固定在最左道、合流曲線、
+> 分支色塊旁的 `↑N` 即推送按鈕、`無 upstream` 與未 commit 髒污等狀態徽章。
+
 ## 功能
 
 - **全景掃描**：走訪根目錄找出所有 repo。worktree 以 `git-common-dir` 去重併回
