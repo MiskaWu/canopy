@@ -158,7 +158,7 @@ export default function App() {
     <div className="wrap">
       <header>
         <h1>
-          git-graph <span className="dim">· {data?.root?.replace(/^\/home\/[^/]+/, '~') ?? ''}</span>
+          canopy <span className="dim">· {data?.root?.replace(/^\/home\/[^/]+/, '~') ?? ''}</span>
         </h1>
         <div className="hstat">
           <span>{repos.length} repos</span>

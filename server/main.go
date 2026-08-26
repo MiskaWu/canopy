@@ -1,4 +1,4 @@
-// git-graph：本機 git 線圖面板。
+// canopy：本機 git 線圖面板。
 // 掃描 root 底下所有 repo（worktree 以 git-common-dir 去重），
 // inotify 盯 refs、SSE 推播、定期 fetch，前端（web/，go:embed 進 binary）畫線圖。
 package main
@@ -110,6 +110,6 @@ func main() {
 		index(w, r)
 	})
 
-	fmt.Printf("git-graph listening on http://%s (root=%s)\n", *addr, *root)
+	fmt.Printf("canopy listening on http://%s (root=%s)\n", *addr, *root)
 	log.Fatal(http.ListenAndServe(*addr, mux))
 }
