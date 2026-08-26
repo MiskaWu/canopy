@@ -1,2 +1,5 @@
 git-graph
 *.log
+server/dist/
+web/dist/
+web/node_modules/
