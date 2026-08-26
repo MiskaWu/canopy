@@ -63,7 +63,8 @@ header h1 .dim{color:var(--muted);font-weight:500}
 .wt{font-size:11px;color:var(--muted);flex-shrink:0}
 .sess{font-size:10.5px;flex-shrink:0}
 .sess.live{color:var(--ok)} .sess.idle{color:var(--faint)}
-.push{font-size:11px;color:#0f1216;background:var(--accent);border:none;border-radius:6px;padding:2.5px 10px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit}
+.act{width:58px;flex-shrink:0;display:flex;justify-content:flex-end}
+.push{width:100%;font-size:11px;color:#0f1216;background:var(--accent);border:none;border-radius:6px;padding:3px 0;font-weight:600;cursor:pointer;font-family:inherit;text-align:center}
 .push:hover{background:#8ec2f5}
 
 /* ── quiet repos ── */
@@ -244,8 +245,8 @@ const rows = COMMITS.map((c,i)=>{
     if(c.tip.sess) chips += c.tip.sess==="live" ? `<span class="sess live">●</span>` : `<span class="sess idle">○ ${c.tip.sess.split(":")[1]}</span>`;
     (c.tip.badges||[]).forEach(b=>{const [k,t]=b.split(":"); chips += `<span class="badge b-${k==='ahead'?'ahead':k==='dirty'?'dirty':k==='div'?'div':'ok'}">${t}</span>`;});
   }
-  const push = c.tip && c.tip.push ? `<button class="push">推送</button>` : "";
-  return `<div class="row" style="padding-left:${gw+10}px;--gx:${gw+10}px">${chips}<span class="sub${c.merge?' merge':''}">${c.sub}</span>${push}<span class="sha mono">${c.sha}</span><span class="age">${c.age}</span></div>`;
+  const act = `<span class="act">${c.tip && c.tip.push ? `<button class="push">推送</button>` : ""}</span>`;
+  return `<div class="row" style="padding-left:${gw+10}px;--gx:${gw+10}px">${chips}<span class="sub${c.merge?' merge':''}">${c.sub}</span><span class="sha mono">${c.sha}</span><span class="age">${c.age}</span>${act}</div>`;
 }).join("");
 
 document.getElementById("g1").innerHTML =
