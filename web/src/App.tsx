@@ -23,12 +23,18 @@ export default function App() {
   const [snaps, setSnaps] = useState<Record<string, Snapshot>>({})
   const [pushTarget, setPushTarget] = useState<PushTarget | null>(null)
   const [quietOpen, setQuietOpen] = useState(false)
+  const [connErr, setConnErr] = useState('')
 
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
 
   const refreshList = useCallback(() => {
-    fetchRepos().then(setData).catch(() => {})
+    fetchRepos()
+      .then((d) => {
+        setData(d)
+        setConnErr('')
+      })
+      .catch((e) => setConnErr(`${location.href} → ${e instanceof Error ? e.message : e}`))
   }, [])
 
   const refreshSnap = useCallback((id: string) => {
@@ -120,7 +126,8 @@ export default function App() {
         ))}
       </div>
 
-      {data === null && <div className="dim pad">連線中…</div>}
+      {connErr && <div className="pad connerr">API 連不上：{connErr}</div>}
+      {data === null && !connErr && <div className="dim pad">連線中…</div>}
       {data !== null && repos.length === 0 && <div className="dim pad">初始掃描中…</div>}
 
       {shown.map((r) => (
