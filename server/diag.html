@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>git-graph 能力診斷</title>
+<style>
+body{background:#0f1216;color:#d9dfe7;font-family:ui-monospace,monospace;font-size:13px;margin:2rem;line-height:1.7}
+.ok{color:#58c98b}.no{color:#e07a7a}.dim{color:#8b95a3}
+button{background:#6cb0f0;color:#0f1216;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:8px}
+#out div{word-break:break-all}
+</style>
+</head>
+<body>
+<h3>git-graph 面板能力診斷</h3>
+<div id="out"></div>
+<p>
+<button onclick="location.reload()">A: location.reload()</button>
+<a href="/diag?nav=1">B: 連結導航</a>
+<form method="POST" action="/api/diag" style="display:inline"><button type="submit">C: 表單 POST</button></form>
+</p>
+<p class="dim">自動測試會自己跑完；A/B/C 三顆手動按，按完頁面有換掉（或出現 echo 文字）就是通。</p>
+<script>
+const out = document.getElementById('out');
+function line(name, pass, detail) {
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="${pass ? 'ok' : 'no'}">${pass ? 'PASS' : 'FAIL'}</span> ${name} <span class="dim">${detail || ''}</span>`;
+  out.appendChild(d);
+}
+line('location.href', true, location.href);
+line('userAgent', true, navigator.userAgent);
+if (location.search.includes('nav=1')) line('B: 連結導航', true, '你是從連結點過來的，導航可用');
+
+async function tryFetch(name, url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    const t = (await r.text()).slice(0, 60);
+    line(name, r.ok, `${r.status} ${t}`);
+    return r.ok;
+  } catch (e) {
+    line(name, false, String(e));
+    return false;
+  }
+}
+(async () => {
+  await tryFetch('fetch 同源 /api/diag', '/api/diag');
+  await tryFetch('fetch http://127.0.0.1:7777', 'http://127.0.0.1:7777/api/diag');
+  await tryFetch('fetch http://localhost:7777', 'http://localhost:7777/api/diag');
+  await tryFetch('fetch http://127.0.0.1.nip.io:7777', 'http://127.0.0.1.nip.io:7777/api/diag');
+  await tryFetch('POST 同源 /api/diag', '/api/diag', { method: 'POST' });
+
+  // 子資源：<img>
+  const img = new Image();
+  img.onload = () => line('img 子資源 /api/diag.png', true, `${img.width}x${img.height}`);
+  img.onerror = () => line('img 子資源 /api/diag.png', false, 'onerror');
+  img.src = '/api/diag.png?' + Date.now();
+
+  // SSE
+  try {
+    const es = new EventSource('/api/events');
+    const t = setTimeout(() => { line('EventSource /api/events', false, 'timeout 5s, readyState=' + es.readyState); es.close(); }, 5000);
+    es.onopen = () => { clearTimeout(t); line('EventSource /api/events', true, 'open'); es.close(); };
+    es.onerror = () => { clearTimeout(t); line('EventSource /api/events', false, 'onerror, readyState=' + es.readyState); es.close(); };
+  } catch (e) { line('EventSource', false, String(e)); }
+
+  // 動態 <script src>
+  const sc = document.createElement('script');
+  sc.onload = () => line('script src /api/diag.js', true, window.__diagjs || '');
+  sc.onerror = () => line('script src /api/diag.js', false, 'onerror');
+  sc.src = '/api/diag.js?' + Date.now();
+  document.body.appendChild(sc);
+})();
+</script>
+</body>
+</html>
