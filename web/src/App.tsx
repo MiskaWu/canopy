@@ -1,10 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchRepo, fetchRepos, loadLS, saveLS, subscribe } from './api'
+import { fetchRepo, fetchRepos, loadLS, probeNetwork, saveLS, subscribe } from './api'
 import { Graph } from './Graph'
 import { PushDialog, type PushTarget } from './PushDialog'
 import type { Branch, ReposResponse, Snapshot, Summary } from './types'
 
 type Filter = 'active' | 'pinned' | 'all'
+// live：真瀏覽器，fetch + SSE 即時。
+// static：Desktop 面板的殼——只有「載入整份文件」可用，
+//         資料嵌在 HTML、UI 狀態放網址、互動用連結/表單、定時 reload。
+type Mode = 'probing' | 'live' | 'static'
+
+const boot = window.__DATA__
+
+const q = new URLSearchParams(location.search)
+const urlFilter = ((['active', 'pinned', 'all'] as const).find((f) => f === q.get('f')) ?? 'active') as Filter
+const urlOpen = (q.get('open') ?? '').split(',').filter(Boolean)
+const urlPin = (q.get('pin') ?? '').split(',').filter(Boolean)
+const pushedMsg = q.get('pushed') ?? ''
+const pushErrMsg = q.get('pushErr') ?? ''
+
+function hrefFor(f: Filter, open: string[], pin: string[]): string {
+  const p = new URLSearchParams()
+  if (f !== 'active') p.set('f', f)
+  if (open.length) p.set('open', open.join(','))
+  if (pin.length) p.set('pin', pin.join(','))
+  const s = p.toString()
+  return s ? `/?${s}` : '/'
+}
+
+const toggled = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
 
 function ago(unix: number): string {
   if (!unix) return '—'
@@ -16,17 +40,25 @@ function ago(unix: number): string {
 }
 
 export default function App() {
-  const [data, setData] = useState<ReposResponse | null>(null)
-  const [filter, setFilter] = useState<Filter>(() => loadLS<Filter>('gg.filter', 'active'))
-  const [pinned, setPinned] = useState<string[]>(() => loadLS<string[]>('gg.pinned', []))
-  const [expanded, setExpanded] = useState<string[]>(() => loadLS<string[]>('gg.expanded', []))
-  const [snaps, setSnaps] = useState<Record<string, Snapshot>>({})
+  const [mode, setMode] = useState<Mode>('probing')
+  const [data, setData] = useState<ReposResponse | null>(
+    boot ? { root: boot.root, lastFetch: boot.lastFetch, repos: boot.repos } : null,
+  )
+  const [liveFilter, setLiveFilter] = useState<Filter>(() => loadLS<Filter>('gg.filter', 'active'))
+  const [livePinned, setLivePinned] = useState<string[]>(() => loadLS<string[]>('gg.pinned', []))
+  const [liveExpanded, setLiveExpanded] = useState<string[]>(() => loadLS<string[]>('gg.expanded', []))
+  const [snaps, setSnaps] = useState<Record<string, Snapshot>>(boot?.snapshots ?? {})
   const [pushTarget, setPushTarget] = useState<PushTarget | null>(null)
   const [quietOpen, setQuietOpen] = useState(false)
   const [connErr, setConnErr] = useState('')
 
-  const expandedRef = useRef(expanded)
-  expandedRef.current = expanded
+  const isStatic = mode === 'static'
+  const filter = isStatic ? urlFilter : liveFilter
+  const pinned = isStatic ? urlPin : livePinned
+  const expanded = isStatic ? urlOpen : liveExpanded
+
+  const expandedRef = useRef(liveExpanded)
+  expandedRef.current = liveExpanded
 
   const refreshList = useCallback(() => {
     fetchRepos()
@@ -44,10 +76,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    probeNetwork().then((ok) => setMode(ok ? 'live' : 'static'))
+  }, [])
+
+  // live 模式：fetch 初始資料 + SSE 即時更新
+  useEffect(() => {
+    if (mode !== 'live') return
     refreshList()
-    // 初始掃描期間 repo 逐一亮起來；用短輪詢補到 SSE 建立前的空窗
-    const warmup = setInterval(refreshList, 2000)
-    setTimeout(() => clearInterval(warmup), 15000)
+    liveExpanded.forEach(refreshSnap)
     const off = subscribe((ev) => {
       if (ev.type === 'repo') {
         refreshList()
@@ -56,45 +92,59 @@ export default function App() {
         refreshList()
       }
     })
-    return () => {
-      clearInterval(warmup)
-      off()
-    }
-  }, [refreshList, refreshSnap])
+    return off
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, refreshList, refreshSnap])
 
-  useEffect(() => saveLS('gg.filter', filter), [filter])
-  useEffect(() => saveLS('gg.pinned', pinned), [pinned])
-  useEffect(() => saveLS('gg.expanded', expanded), [expanded])
+  // static 模式：定時整頁重載（推送框開著時暫停）。
+  // 若殼擋掉 script reload，header 的 ⟳ 連結是手動保底。
+  useEffect(() => {
+    if (mode !== 'static' || pushTarget) return
+    const t = setInterval(() => location.reload(), 10000)
+    return () => clearInterval(t)
+  }, [mode, pushTarget])
+
+  useEffect(() => {
+    if (!isStatic) saveLS('gg.filter', liveFilter)
+  }, [isStatic, liveFilter])
+  useEffect(() => {
+    if (!isStatic) saveLS('gg.pinned', livePinned)
+  }, [isStatic, livePinned])
+  useEffect(() => {
+    if (!isStatic) saveLS('gg.expanded', liveExpanded)
+  }, [isStatic, liveExpanded])
 
   const repos = data?.repos ?? []
   const activeRepos = repos.filter((r) => r.active)
   const pinnedSet = new Set(pinned)
 
   let shown: Summary[]
-  if (filter === 'all') shown = repos
+  if (filter === 'all') shown = [...repos]
   else if (filter === 'pinned') shown = repos.filter((r) => pinnedSet.has(r.id))
-  else shown = activeRepos
-  // 釘選的浮頂
-  shown = [...shown].sort((a, b) => Number(pinnedSet.has(b.id)) - Number(pinnedSet.has(a.id)))
-  const quiet = filter === 'active' ? repos.filter((r) => !r.active) : []
+  else shown = repos.filter((r) => r.active)
+  // 展開中的 repo 一定要有卡片，即使不在目前過濾範圍
+  const shownIds = new Set(shown.map((r) => r.id))
+  for (const id of expanded) {
+    const r = repos.find((x) => x.id === id)
+    if (r && !shownIds.has(id)) shown.push(r)
+  }
+  shown.sort((a, b) => Number(pinnedSet.has(b.id)) - Number(pinnedSet.has(a.id)))
+  const quiet = filter === 'active' ? repos.filter((r) => !r.active && !expanded.includes(r.id)) : []
 
   const toggleExpand = (id: string) => {
-    setExpanded((e) => {
+    setLiveExpanded((e) => {
       const on = e.includes(id)
       if (!on) refreshSnap(id)
       return on ? e.filter((x) => x !== id) : [...e, id]
     })
   }
 
-  const togglePin = (id: string, ev: React.MouseEvent) => {
-    ev.stopPropagation()
-    setPinned((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
-  }
-
   const openPush = (id: string) => (branch: Branch) => {
     const snap = snaps[id]
     setPushTarget({ repoId: id, branch, remotes: snap?.remotes ?? ['origin'] })
   }
+
+  const backQuery = hrefFor(filter, expanded, pinned).replace(/^\/\??/, '')
 
   return (
     <div className="wrap">
@@ -105,10 +155,17 @@ export default function App() {
         <div className="hstat">
           <span>{repos.length} repos</span>
           <span>⟳ fetch {data?.lastFetch ? ago(data.lastFetch) : '尚未'}</span>
-          <span>
-            <span className="dot-live" />
-            即時
-          </span>
+          {mode === 'live' && (
+            <span>
+              <span className="dot-live" />
+              即時
+            </span>
+          )}
+          {isStatic && boot && (
+            <a className="refresh" href={hrefFor(filter, expanded, pinned)} title="重新整理">
+              資料 {ago(boot.generatedAt)} ⟳
+            </a>
+          )}
         </div>
       </header>
 
@@ -119,28 +176,39 @@ export default function App() {
             ['pinned', `已釘選 ${pinned.length}`],
             ['all', `全部 ${repos.length}`],
           ] as [Filter, string][]
-        ).map(([f, label]) => (
-          <div key={f} className={`chip${filter === f ? ' on' : ''}`} onClick={() => setFilter(f)}>
-            {label}
-          </div>
-        ))}
+        ).map(([f, label]) =>
+          isStatic ? (
+            <a key={f} className={`chip${filter === f ? ' on' : ''}`} href={hrefFor(f, expanded, pinned)}>
+              {label}
+            </a>
+          ) : (
+            <div key={f} className={`chip${filter === f ? ' on' : ''}`} onClick={() => setLiveFilter(f)}>
+              {label}
+            </div>
+          ),
+        )}
       </div>
 
-      {connErr && <div className="pad connerr">API 連不上：{connErr}</div>}
-      {data === null && !connErr && <div className="dim pad">連線中…</div>}
+      {pushedMsg && isStatic && (
+        <div className="toast ok">
+          已推送 <span className="mono">{pushedMsg}</span>
+          <a href={hrefFor(filter, expanded, pinned)}>✕</a>
+        </div>
+      )}
+      {pushErrMsg && isStatic && (
+        <div className="toast err">
+          推送失敗：{pushErrMsg}
+          <a href={hrefFor(filter, expanded, pinned)}>✕</a>
+        </div>
+      )}
+
+      {connErr && mode === 'live' && <div className="pad connerr">API 連不上：{connErr}</div>}
+      {data === null && <div className="dim pad">{mode === 'probing' ? '載入中…' : '連線中…'}</div>}
       {data !== null && repos.length === 0 && <div className="dim pad">初始掃描中…</div>}
 
-      {shown.map((r) => (
-        <div className="card" key={r.id}>
-          <div className="card-h" onClick={() => toggleExpand(r.id)}>
-            <span
-              className="pin"
-              style={{ opacity: pinnedSet.has(r.id) ? 1 : 0.25 }}
-              onClick={(e) => togglePin(r.id, e)}
-              title={pinnedSet.has(r.id) ? '取消釘選' : '釘選'}
-            >
-              📌
-            </span>
+      {shown.map((r) => {
+        const inner = (
+          <>
             <span className="name">{r.name}</span>
             <span className="head mono">{r.headBranch}</span>
             <div className="meta">
@@ -152,24 +220,70 @@ export default function App() {
               {!r.active && <span className="badge b-ok">✓ 乾淨</span>}
               {r.sessionLive && <span className="sess live">●</span>}
             </div>
+          </>
+        )
+        const pinHref = hrefFor(filter, expanded, toggled(pinned, r.id))
+        const expandHref = hrefFor(filter, toggled(expanded, r.id), pinned)
+        return (
+          <div className="card" key={r.id}>
+            <div className="card-h">
+              {isStatic ? (
+                <a className="pin" style={{ opacity: pinnedSet.has(r.id) ? 1 : 0.25 }} href={pinHref} title="釘選">
+                  📌
+                </a>
+              ) : (
+                <span
+                  className="pin"
+                  style={{ opacity: pinnedSet.has(r.id) ? 1 : 0.25 }}
+                  onClick={() => setLivePinned((p) => toggled(p, r.id))}
+                  title="釘選"
+                >
+                  📌
+                </span>
+              )}
+              {isStatic ? (
+                <a className="grow" href={expandHref}>
+                  {inner}
+                </a>
+              ) : (
+                <div className="grow" onClick={() => toggleExpand(r.id)}>
+                  {inner}
+                </div>
+              )}
+            </div>
+            {expanded.includes(r.id) &&
+              (snaps[r.id] ? (
+                <Graph snap={snaps[r.id]} onPush={openPush(r.id)} />
+              ) : (
+                <div className="dim pad">載入線圖…</div>
+              ))}
           </div>
-          {expanded.includes(r.id) &&
-            (snaps[r.id] ? <Graph snap={snaps[r.id]} onPush={openPush(r.id)} /> : <div className="dim pad">載入線圖…</div>)}
-        </div>
-      ))}
+        )
+      })}
 
       {quiet.length > 0 && (
         <div className="card">
-          {(quietOpen ? quiet : quiet.slice(0, 3)).map((r) => (
-            <div className="quiet-row" key={r.id} onClick={() => toggleExpand(r.id)}>
-              <span className="name">{r.name}</span>
-              <span className="mono qbranch">{r.headBranch}</span>
-              <div className="right">
-                <span className="badge b-ok">✓</span>
-                <span>{ago(r.lastCommit)}</span>
+          {(quietOpen ? quiet : quiet.slice(0, 3)).map((r) => {
+            const inner = (
+              <>
+                <span className="name">{r.name}</span>
+                <span className="mono qbranch">{r.headBranch}</span>
+                <div className="right">
+                  <span className="badge b-ok">✓</span>
+                  <span>{ago(r.lastCommit)}</span>
+                </div>
+              </>
+            )
+            return isStatic ? (
+              <a className="quiet-row" key={r.id} href={hrefFor(filter, toggled(expanded, r.id), pinned)}>
+                {inner}
+              </a>
+            ) : (
+              <div className="quiet-row" key={r.id} onClick={() => toggleExpand(r.id)}>
+                {inner}
               </div>
-            </div>
-          ))}
+            )
+          })}
           {quiet.length > 3 && (
             <div className="fold" onClick={() => setQuietOpen(!quietOpen)}>
               {quietOpen ? '▴ 收合' : `▾ 其餘 ${quiet.length - 3} 個安靜的 repo`}
@@ -188,7 +302,15 @@ export default function App() {
         <span>✓ 已合併/乾淨</span>
       </div>
 
-      {pushTarget && <PushDialog target={pushTarget} onClose={() => setPushTarget(null)} />}
+      {pushTarget && (
+        <PushDialog
+          target={pushTarget}
+          staticMode={isStatic}
+          preview={boot?.previews?.[pushTarget.repoId]?.[pushTarget.branch.name]}
+          backQuery={backQuery}
+          onClose={() => setPushTarget(null)}
+        />
+      )}
     </div>
   )
 }

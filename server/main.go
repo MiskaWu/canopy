@@ -7,12 +7,10 @@ import (
 	"embed"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -97,22 +95,19 @@ func main() {
 		fmt.Fprint(w, "window.__diagjs='loaded'")
 	})
 
-	dist, err := fs.Sub(webDist, "dist")
+	// 單檔前端 + 資料嵌入：每次載入首頁時把摘要與展開中 repo 的快照
+	// 直接寫進 HTML（面板的殼執行期沒有網路，這是它唯一的資料通道）
+	indexHTML, err := webDist.ReadFile("dist/index.html")
 	if err != nil {
 		log.Fatal(err)
 	}
-	fileServer := http.FileServerFS(dist)
+	index := store.makeIndexHandler(indexHTML)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		p := strings.TrimPrefix(r.URL.Path, "/")
-		if p != "" {
-			if f, err := dist.Open(p); err == nil {
-				f.Close()
-				fileServer.ServeHTTP(w, r)
-				return
-			}
+		if r.URL.Path != "/" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
 		}
-		r.URL.Path = "/" // SPA fallback
-		fileServer.ServeHTTP(w, r)
+		index(w, r)
 	})
 
 	fmt.Printf("git-graph listening on http://%s (root=%s)\n", *addr, *root)

@@ -76,3 +76,24 @@ export interface PushPreview {
   upstream: string
   remote: string
 }
+
+export interface PushPreviewEntry {
+  commits: { sha: string; subject: string }[] | null
+  noUpstream: boolean
+}
+
+// 伺服器嵌進頁面的啟動資料（靜態模式的唯一資料來源）
+export interface BootData {
+  root: string
+  lastFetch: number
+  generatedAt: number
+  repos: Summary[] | null
+  snapshots: Record<string, Snapshot> | null
+  previews: Record<string, Record<string, PushPreviewEntry>> | null
+}
+
+declare global {
+  interface Window {
+    __DATA__: BootData | null
+  }
+}
