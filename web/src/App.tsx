@@ -104,6 +104,14 @@ export default function App() {
     return () => clearInterval(t)
   }, [mode, pushTarget])
 
+  // 「資料 N 秒前」每秒跳動：數字歸零＝自動重載活著；一路爬升＝reload 被擋
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (mode !== 'static') return
+    const t = setInterval(() => setTick((x) => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [mode])
+
   useEffect(() => {
     if (!isStatic) saveLS('gg.filter', liveFilter)
   }, [isStatic, liveFilter])
