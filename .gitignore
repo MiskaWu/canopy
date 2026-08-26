@@ -1,4 +1,4 @@
-git-graph
+canopy
 *.log
 server/dist/
 web/dist/

@@ -1,4 +1,4 @@
-module git-graph
+module canopy
 
 go 1.26.5
 

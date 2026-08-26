@@ -1,0 +1,12 @@
+# canopy：本機 git 線圖面板（唯讀掃描 + 之後的推送端點）。
+# 安裝：cp deploy/canopy.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now canopy
+[Unit]
+Description=canopy local commit graph panel
+
+[Service]
+ExecStart=%h/projects/canopy/canopy
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -7,12 +7,12 @@ web:
 	rm -rf server/dist && cp -r web/dist server/dist
 
 bin:
-	go vet ./... && go build -o git-graph ./server
+	go vet ./... && go build -o canopy ./server
 
 install: all
-	cp deploy/git-graph.service ~/.config/systemd/user/
+	cp deploy/canopy.service ~/.config/systemd/user/
 	systemctl --user daemon-reload
-	systemctl --user restart git-graph
+	systemctl --user restart canopy
 
 clean:
-	rm -rf git-graph server/dist web/dist
+	rm -rf canopy server/dist web/dist
