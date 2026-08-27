@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fetchRepo, fetchRepos, loadLS, probeNetwork, saveLS, subscribe } from './api'
 import { Graph } from './Graph'
 import { PushDialog, type PushTarget } from './PushDialog'
@@ -11,6 +11,46 @@ type Filter = 'active' | 'pinned' | 'all'
 type Mode = 'probing' | 'live' | 'static'
 
 const boot = window.__DATA__
+
+// static 模式的自動重載會把整份文件丟掉重建，捲動位置跟著沒了。
+// 只有「這次重載是自動觸發的」才復原：使用者自己點連結導航（換過濾、展開 repo）
+// 仍照瀏覽器預設處理，不會被硬拉回原位。
+const SCROLL_KEY = 'gg.reloadScroll'
+
+function stashScroll() {
+  try {
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY))
+  } catch {
+    /* 隱私模式等，放棄復原即可 */
+  }
+}
+
+// 在模組載入時就取走並清掉：讀到值＝上一幀是自動重載留下的。
+const pendingScroll = (() => {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_KEY)
+    sessionStorage.removeItem(SCROLL_KEY)
+    return raw === null ? null : Number(raw)
+  } catch {
+    return null
+  }
+})()
+
+// 自動重載間隔。面板裡沒有 SSE，這是 static 模式唯一的更新管道。
+const RELOAD_MS = 10000
+
+// 探測要一次網路往返才有結果，但第一次繪製等不了它：static 模式的 UI 狀態在網址、
+// live 模式的在 localStorage，猜錯的話探測回來就會整個重排——那也是一次閃。
+// 所以先用記得的結果開場，探測仍照跑，只在結果不同時修正並更新記錄。
+const MODE_KEY = 'gg.mode'
+
+function rememberedMode(): Mode {
+  const v = loadLS<string>(MODE_KEY, '')
+  if (v === 'live' || v === 'static') return v
+  // 沒有記錄時看主機名：面板固定從 nip.io 那個網址開（見 CLAUDE.md），
+  // 一般瀏覽器多半直接連 127.0.0.1。認不出來就照舊等探測。
+  return location.hostname.includes('nip.io') ? 'static' : 'probing'
+}
 
 const q = new URLSearchParams(location.search)
 const urlFilter = ((['active', 'pinned', 'all'] as const).find((f) => f === q.get('f')) ?? 'active') as Filter
@@ -40,7 +80,7 @@ function ago(unix: number): string {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>('probing')
+  const [mode, setMode] = useState<Mode>(rememberedMode)
   const [data, setData] = useState<ReposResponse | null>(
     boot ? { root: boot.root, lastFetch: boot.lastFetch, repos: boot.repos } : null,
   )
@@ -76,7 +116,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    probeNetwork().then((ok) => setMode(ok ? 'live' : 'static'))
+    probeNetwork().then((ok) => {
+      const probed: Mode = ok ? 'live' : 'static'
+      setMode(probed)
+      saveLS(MODE_KEY, probed)
+    })
   }, [])
 
   // live 模式：fetch 初始資料 + SSE 即時更新
@@ -98,11 +142,34 @@ export default function App() {
 
   // static 模式：定時整頁重載（推送框開著時暫停）。
   // 若殼擋掉 script reload，header 的 ⟳ 連結是手動保底。
+  // 分頁被藏起來時不重載——沒人在看，重建文件只是白費工；切回來時補一次，
+  // 這樣使用者看到的永遠是剛抓的資料。
   useEffect(() => {
     if (mode !== 'static' || pushTarget) return
-    const t = setInterval(() => location.reload(), 10000)
-    return () => clearInterval(t)
+    const reload = () => {
+      stashScroll()
+      location.reload()
+    }
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') reload()
+    }, RELOAD_MS)
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      // 資料還新就不重載——切走又切回來不該每次都重建整份文件。
+      if (Date.now() / 1000 - (boot?.generatedAt ?? 0) >= RELOAD_MS / 1000) reload()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [mode, pushTarget])
+
+  // 復原捲動位置。打包後的 script 是同步的，跑到這裡時版面已經是完整高度，
+  // 所以這次 scrollTo 會落在正確位置，不必等 layout。
+  useLayoutEffect(() => {
+    if (pendingScroll !== null) window.scrollTo(0, pendingScroll)
+  }, [])
 
   // 「資料 N 秒前」每秒跳動：數字歸零＝自動重載活著；一路爬升＝reload 被擋
   const [, setTick] = useState(0)

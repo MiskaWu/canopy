@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>canopy</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='4' cy='4' r='2.4' fill='%236cb0f0'/><circle cx='12' cy='8' r='2.4' fill='%2358c98b'/><circle cx='4' cy='12' r='2.4' fill='%236cb0f0'/><path d='M4 6v4M6 5l4 2' stroke='%23555f6b' stroke-width='1.4' fill='none'/></svg>" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" />
+    <!-- 這裡不可以有任何外部資產（見 CLAUDE.md 鐵律 1）。面板的殼會擋掉它，
+         而 <link rel=stylesheet> 是 render-blocking 的——static 模式每 10 秒重載一次，
+         等於每次都先卡一輪必定失敗的請求才畫得出畫面。字型改走系統堆疊。 -->
       <style>html { background: #0f1216; } body { background: #0f1216; color: #8b95a3; font-family: sans-serif; }</style>
   </head>
   <body>
