@@ -29,7 +29,9 @@ deploy/   canopy.service（systemd user unit）
   img、script src、外部 CSS 一律失敗。原因是 Chromium 的 DNS rebinding 防護——
   nip.io 是「公開網域解析到私有位址」，正是它盯的目標（main.log：
   `Blocked subresource to private-resolving host`）。判斷依據是**頁面自己的來源**，
-  不是請求的目標：從 127.0.0.1 那頁反過來要 nip.io 的資料是通的。頂層導航不受影響。
+  不是請求的目標：從 127.0.0.1 那頁反過來要 nip.io 的資料是通的。
+  **頁面自己發起的頂層導航仍然活著**（連結、表單 POST、`location.replace()`），
+  那是 nip.io 底下唯一還通的路——但只限頁面自己發起的，見下一條。
 - **換到 127.0.0.1 就全通**：fetch、POST、EventSource、img、script src，連外部網域
   （fonts.googleapis.com）都 PASS。
 - **跳過去只能靠頁面內導航**。index.html 的第一段 script 判斷 hostname 含 nip.io
@@ -46,11 +48,17 @@ deploy/   canopy.service（systemd user unit）
    底下可用。它的手段只有三種——資料由伺服器嵌進 HTML（`window.__DATA__`，見
    api.go 的 `makeIndexHandler`）、UI 狀態放 URL query（`f`/`open`/`pin`）、
    互動用 `<a>` 連結或表單 POST（成敗都 303 回首頁帶 `pushed`/`pushErr` query）。
-   模式由開頁時的 fetch 探測決定（api.ts `probeNetwork`）。
-2. **前端維持單檔自包含**（vite-plugin-singlefile）。跳轉失敗時停在 nip.io，
-   那裡什麼外部資產都拿不到，單檔是唯一還能完整渲染的形態。唯一的例外是
-   index.html 那行 Google Fonts：它在 127.0.0.1 底下載得到（實測 PASS），
-   跳轉失敗時就退回系統字型堆疊——那是可接受的降級，不是壞掉。
+   模式先用 `rememberedMode()` 記得的結果開場，`probeNetwork()` 探測回來再修正
+   （為什麼不直接等探測，見鐵律 3）。
+2. **前端維持單檔自包含**（vite-plugin-singlefile），**字型是唯一開的例外**。
+   跳轉失敗時停在 nip.io，那裡任何外部資產都拿不到，單檔是唯一還能完整渲染的
+   形態；新增依賴時確認它會被 inline。
+   例外是 index.html 那行 Google Fonts——127.0.0.1 底下載得到（實測 PASS），
+   停在 nip.io 時載不到，字型退回系統堆疊，是降級不是壞掉。
+   敢留這個例外有兩個前提，拆掉任一個就不成立：跳轉判斷擺在那行 `<link>` 前面，
+   正常路徑根本走不到它；而 nip.io 底下的子資源失敗是立即回報的（fetch／img／
+   script src 實測皆如此，外部 CSS 沒單獨測過——要驗就點不帶 `jump=1` 的 /diag），
+   所以即使走到了，這個 render-blocking 的樣式表也不至於拖住退路的首次繪製。
 3. **第一次繪製就必須是完整畫面**。static 退路每 10 秒整頁重載，那時首次繪製不是
    載入過程而是使用者實際看到的畫面；live 模式雖然不重載，開頁那一次同樣受益。
    靠 vite.config.ts 的 `blockingInlineScript`：把打包格式壓成 IIFE、script 標籤降成
@@ -74,8 +82,10 @@ deploy/   canopy.service（systemd user unit）
   走 60s 慢輪詢（rebuild 後摘要沒變不廣播）。
 - **推送安全**（api.go `handlePush`）：指令固定由伺服器組成
   `git push [-u] <remote> <branch>`，**前端永遠傳不進任何旗標**；remote 必須存在於
-  該 repo；main/master 需要 `confirmMain`；Origin 白名單含 nip.io 兩種寫法與
-  localhost（見 `originAllowed`），無 Origin（curl）放行。改動這段時不得放寬這些。
+  該 repo；main/master 需要 `confirmMain`；無 Origin（curl）放行。
+  Origin 白名單（見 `originAllowed`）含 nip.io 兩種寫法、localhost、
+  **`http://127.0.0.1:7777`——跳轉之後的正常路徑就是它，拿掉推送會全壞**，
+  外加 vite dev 的 5173 兩種寫法。改動這段時不得放寬這些。
 - **雙模共用一份元件**：Graph.tsx 是純渲染；App.tsx 依 `isStatic` 決定互動元素是
   連結還是 onClick。改 UI 時兩條路都要接。
 - **static 模式的重載只在看得見時發生**：分頁被藏起來就跳過，切回來且資料已超過
@@ -94,6 +104,8 @@ deploy/   canopy.service（systemd user unit）
 - 線圖的線**不可被任何東西切斷**：列分隔線從文字區開始（`--gx`），SVG z-index 在列之上。
 - 推送按鈕是分支色塊旁的 `↑N`（N＝未推 commit 數），狀態即動作，不另設未推徽章。
 - 字型：Inter + Noto Sans TC 內文、JetBrains Mono 給 SHA/分支名/數字。
+  由 index.html 的 Google Fonts 載入，**跳轉失敗停在 nip.io 時會退回系統字型
+  堆疊**——看到那樣不是定稿被改壞，是退路生效（見鐵律 2）。
   深色定調（面板環境），色票在 styles.css `:root`。
 
 ## 驗證手段
