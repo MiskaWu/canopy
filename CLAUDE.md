@@ -45,9 +45,20 @@ deploy/   canopy.service（systemd user unit）
 由此推出三條**不可違反的鐵律**：
 
 1. **跳轉失敗必須還能用**。static 模式是那條退路，不是遺跡：任何新功能都要在它
-   底下可用。它的手段只有三種——資料由伺服器嵌進 HTML（`window.__DATA__`，見
-   api.go 的 `makeIndexHandler`）、UI 狀態放 URL query（`f`/`open`/`pin`）、
-   互動用 `<a>` 連結或表單 POST（成敗都 303 回首頁帶 `pushed`/`pushErr` query）。
+   底下可用。**它的限制是網路不通，不是 JS 不能跑**——別把這條讀成「所有互動都得
+   改寫成連結」。純前端狀態照樣用 onClick（Graph.tsx 的 `↑N` 按鈕、安靜清單的
+   摺疊，兩種模式都是 onClick）；只有「需要伺服器參與」和「要撐過整頁重載」的
+   東西才受限，手段有三種：
+
+   - 資料由伺服器嵌進 HTML（`window.__DATA__`，見 api.go 的 `makeIndexHandler`）。
+   - 要撐過重載的 UI 狀態放 URL query（`f`/`open`/`pin`）；活不過重載也無所謂的
+     放 React state 就好。**已知缺口**：`quietOpen`（安靜清單的展開）是 React
+     state，static 退路上每 10 秒重載會把它收合回去。目前接受這個缺陷，真要修
+     就比照 `f`/`open`/`pin` 加一個 query 參數。
+   - 送資料給伺服器用 `<a>` 連結或表單 POST。推送成敗都 303 回首頁帶
+     `pushed`/`pushErr` query——例外是 Origin 沒過白名單，那條在 `handlePush`
+     最前面就 JSON 403 回絕，不走 303。
+
    模式先用 `rememberedMode()` 記得的結果開場，`probeNetwork()` 探測回來再修正
    （為什麼不直接等探測，見鐵律 3）。
 2. **前端維持單檔自包含**（vite-plugin-singlefile），**字型是唯一開的例外**。
@@ -86,8 +97,9 @@ deploy/   canopy.service（systemd user unit）
   Origin 白名單（見 `originAllowed`）含 nip.io 兩種寫法、localhost、
   **`http://127.0.0.1:7777`——跳轉之後的正常路徑就是它，拿掉推送會全壞**，
   外加 vite dev 的 5173 兩種寫法。改動這段時不得放寬這些。
-- **雙模共用一份元件**：Graph.tsx 是純渲染；App.tsx 依 `isStatic` 決定互動元素是
-  連結還是 onClick。改 UI 時兩條路都要接。
+- **雙模共用一份元件**：Graph.tsx 是純渲染；App.tsx 依 `isStatic` 決定**要撐過重載
+  的**互動（換過濾、展開、釘選）是連結還是 onClick。改 UI 時兩條路都要接。
+  不必撐過重載的（開推送框、摺疊安靜清單）兩模都走 onClick，不用分支。
 - **static 模式的重載只在看得見時發生**：分頁被藏起來就跳過，切回來且資料已超過
   `RELOAD_MS` 才補一次。推送框開著時整個暫停。
 - **退路的觸發與表現**（2026-08-27）：跳到 127.0.0.1 這件事踩在一個本專案控制不了
