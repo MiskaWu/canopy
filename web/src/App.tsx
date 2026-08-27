@@ -56,14 +56,16 @@ const q = new URLSearchParams(location.search)
 const urlFilter = ((['active', 'pinned', 'all'] as const).find((f) => f === q.get('f')) ?? 'active') as Filter
 const urlOpen = (q.get('open') ?? '').split(',').filter(Boolean)
 const urlPin = (q.get('pin') ?? '').split(',').filter(Boolean)
+const urlQuiet = q.get('quiet') === '1'
 const pushedMsg = q.get('pushed') ?? ''
 const pushErrMsg = q.get('pushErr') ?? ''
 
-function hrefFor(f: Filter, open: string[], pin: string[]): string {
+function hrefFor(f: Filter, open: string[], pin: string[], quiet: boolean): string {
   const p = new URLSearchParams()
   if (f !== 'active') p.set('f', f)
   if (open.length) p.set('open', open.join(','))
   if (pin.length) p.set('pin', pin.join(','))
+  if (quiet) p.set('quiet', '1')
   const s = p.toString()
   return s ? `/?${s}` : '/'
 }
@@ -89,13 +91,15 @@ export default function App() {
   const [liveExpanded, setLiveExpanded] = useState<string[]>(() => loadLS<string[]>('gg.expanded', []))
   const [snaps, setSnaps] = useState<Record<string, Snapshot>>(boot?.snapshots ?? {})
   const [pushTarget, setPushTarget] = useState<PushTarget | null>(null)
-  const [quietOpen, setQuietOpen] = useState(false)
+  const [liveQuietOpen, setLiveQuietOpen] = useState(false)
   const [connErr, setConnErr] = useState('')
 
   const isStatic = mode === 'static'
   const filter = isStatic ? urlFilter : liveFilter
   const pinned = isStatic ? urlPin : livePinned
   const expanded = isStatic ? urlOpen : liveExpanded
+  // 安靜清單的展開要撐過 static 退路的整頁重載，所以跟 f/open/pin 一樣放網址
+  const quietOpen = isStatic ? urlQuiet : liveQuietOpen
 
   const expandedRef = useRef(liveExpanded)
   expandedRef.current = liveExpanded
@@ -219,7 +223,7 @@ export default function App() {
     setPushTarget({ repoId: id, branch, remotes: snap?.remotes ?? ['origin'] })
   }
 
-  const backQuery = hrefFor(filter, expanded, pinned).replace(/^\/\??/, '')
+  const backQuery = hrefFor(filter, expanded, pinned, quietOpen).replace(/^\/\??/, '')
 
   return (
     <div className="wrap">
@@ -237,7 +241,7 @@ export default function App() {
             </span>
           )}
           {isStatic && boot && (
-            <a className="refresh" href={hrefFor(filter, expanded, pinned)} title="重新整理">
+            <a className="refresh" href={hrefFor(filter, expanded, pinned, quietOpen)} title="重新整理">
               資料 {ago(boot.generatedAt)} ⟳
             </a>
           )}
@@ -253,7 +257,7 @@ export default function App() {
           ] as [Filter, string][]
         ).map(([f, label]) =>
           isStatic ? (
-            <a key={f} className={`chip${filter === f ? ' on' : ''}`} href={hrefFor(f, expanded, pinned)}>
+            <a key={f} className={`chip${filter === f ? ' on' : ''}`} href={hrefFor(f, expanded, pinned, quietOpen)}>
               {label}
             </a>
           ) : (
@@ -267,13 +271,13 @@ export default function App() {
       {pushedMsg && isStatic && (
         <div className="toast ok">
           已推送 <span className="mono">{pushedMsg}</span>
-          <a href={hrefFor(filter, expanded, pinned)}>✕</a>
+          <a href={hrefFor(filter, expanded, pinned, quietOpen)}>✕</a>
         </div>
       )}
       {pushErrMsg && isStatic && (
         <div className="toast err">
           推送失敗：{pushErrMsg}
-          <a href={hrefFor(filter, expanded, pinned)}>✕</a>
+          <a href={hrefFor(filter, expanded, pinned, quietOpen)}>✕</a>
         </div>
       )}
 
@@ -297,8 +301,8 @@ export default function App() {
             </div>
           </>
         )
-        const pinHref = hrefFor(filter, expanded, toggled(pinned, r.id))
-        const expandHref = hrefFor(filter, toggled(expanded, r.id), pinned)
+        const pinHref = hrefFor(filter, expanded, toggled(pinned, r.id), quietOpen)
+        const expandHref = hrefFor(filter, toggled(expanded, r.id), pinned, quietOpen)
         return (
           <div className="card" key={r.id}>
             <div className="card-h">
@@ -350,7 +354,7 @@ export default function App() {
               </>
             )
             return isStatic ? (
-              <a className="quiet-row" key={r.id} href={hrefFor(filter, toggled(expanded, r.id), pinned)}>
+              <a className="quiet-row" key={r.id} href={hrefFor(filter, toggled(expanded, r.id), pinned, quietOpen)}>
                 {inner}
               </a>
             ) : (
@@ -359,11 +363,16 @@ export default function App() {
               </div>
             )
           })}
-          {quiet.length > 3 && (
-            <div className="fold" onClick={() => setQuietOpen(!quietOpen)}>
-              {quietOpen ? '▴ 收合' : `▾ 其餘 ${quiet.length - 3} 個安靜的 repo`}
-            </div>
-          )}
+          {quiet.length > 3 &&
+            (isStatic ? (
+              <a className="fold" href={hrefFor(filter, expanded, pinned, !quietOpen)}>
+                {quietOpen ? '▴ 收合' : `▾ 其餘 ${quiet.length - 3} 個安靜的 repo`}
+              </a>
+            ) : (
+              <div className="fold" onClick={() => setLiveQuietOpen(!quietOpen)}>
+                {quietOpen ? '▴ 收合' : `▾ 其餘 ${quiet.length - 3} 個安靜的 repo`}
+              </div>
+            ))}
         </div>
       )}
 

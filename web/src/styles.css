@@ -101,7 +101,7 @@ header h1 .dim { font-weight: 500; }
 .quiet-row .name { color: var(--text); font-weight: 500; }
 .quiet-row .qbranch { font-size: 11px; }
 .quiet-row .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-.fold { padding: 9px 14px; color: var(--faint); font-size: 12px; cursor: pointer; border-top: 1px solid #1a2027; }
+.fold { display: block; text-decoration: none; padding: 9px 14px; color: var(--faint); font-size: 12px; cursor: pointer; border-top: 1px solid #1a2027; }
 
 /* ── push dialog ── */
 .overlay {
