@@ -68,6 +68,15 @@ async function tryFetch(name, url, opts) {
   sc.onerror = () => line('script src /api/diag.js', false, 'onerror');
   sc.src = '/api/diag.js?' + Date.now();
   document.body.appendChild(sc);
+
+  // 外部網域：決定 index.html 能不能放 Google Fonts。之前「全滅」是在 nip.io
+  // 底下測的（那時所有子資源都被擋），127.0.0.1 這個來源要重測才算數。
+  const ln = document.createElement('link');
+  ln.rel = 'stylesheet';
+  ln.onload = () => line('外部 CSS fonts.googleapis.com', true, 'loaded');
+  ln.onerror = () => line('外部 CSS fonts.googleapis.com', false, 'onerror');
+  ln.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap';
+  document.head.appendChild(ln);
 })();
 </script>
 </body>

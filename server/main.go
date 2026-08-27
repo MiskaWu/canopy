@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,6 +81,27 @@ func main() {
 	mux.HandleFunc("/diag", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(diagHTML)
+	})
+	// 面板只有 nip.io 那個網址點得開，但 nip.io 是「公開名字解析到私有位址」的來源，
+	// Chromium 的 DNS rebinding 防護會擋掉它發出的所有子資源請求；換成 127.0.0.1
+	// 就八項全通（2026-08-27 於面板實測）。這個端點測的是：面板已經開著之後，
+	// 頁面能不能自己跳到 127.0.0.1。via=302 走 HTTP 重導向，via=js 走頁面內導航，
+	// 兩種都要試——面板可能只攔其中一種。
+	mux.HandleFunc("/tolocal", func(w http.ResponseWriter, r *http.Request) {
+		_, port, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			port = "7777"
+		}
+		target := "http://127.0.0.1:" + port + "/diag"
+		if r.URL.Query().Get("via") == "js" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>跳轉測試</title>`+
+				`<body style="background:#0f1216;color:#8b95a3;font-family:sans-serif;padding:24px">`+
+				`跳轉中… 若停在這頁，代表頁面內導航也被擋了。`+
+				`<script>location.replace(%q)</script>`, target)
+			return
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 	})
 	mux.HandleFunc("/api/diag", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

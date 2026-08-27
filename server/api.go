@@ -50,6 +50,11 @@ func (h *Hub) handleSSE(w http.ResponseWriter, r *http.Request) {
 		delete(h.clients, ch)
 		h.mu.Unlock()
 	}()
+	// 先把 header 沖出去：Go 在第一次寫入前不會送出 header，而 EventSource 收不到
+	// 回應就一直停在 CONNECTING。沒這一行的話，安靜時段要等到下一個事件或 25 秒後
+	// 的心跳才會 open，客戶端早就 timeout 了（2026-08-27 在面板診斷頁抓到）。
+	fmt.Fprint(w, ": open\n\n")
+	fl.Flush()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
 	for {

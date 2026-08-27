@@ -19,39 +19,48 @@ deploy/   canopy.service（systemd user unit）
 
 ## 最重要的環境約束：Desktop 面板殼
 
-這個工具的主要宿主是 Claude Code Desktop 的瀏覽器面板（經
-`http://127-0-0-1.nip.io:7777` 開啟）。該殼的規則（2026-08-26 以 /diag 實測、
-main.log 證實為 DNS rebinding 防護 `Blocked subresource to private-resolving host`）：
+這個工具的主要宿主是 Claude Code Desktop 的瀏覽器面板。**2026-08-27 在面板內逐項
+重測（/diag），結論和先前記載的相反：被擋的不是面板，是 nip.io 那個網址。**
 
-- **頂層文件導航全通**：連結、表單 POST 都會讓 App 重新代抓一份文件，Origin header 保留。
-- **頁面執行期的所有網路請求全滅**：fetch（同源也一樣）、EventSource、img/script
-  子資源、Google Fonts，一律 Failed to fetch。
+- **面板只吃 nip.io 連結**。assistant 訊息裡的 `http://127-0-0-1.nip.io:7777`
+  會在面板內開啟；`http://127.0.0.1:7777`、`http://localhost:7777` 都會被丟給系統
+  預設瀏覽器（認法：/diag 的 userAgent 有 `Claude/…MSIX` 才是面板）。
+- **但從 nip.io 載入的頁面，子資源請求全滅**：fetch（同源也一樣）、EventSource、
+  img、script src、外部 CSS 一律失敗。原因是 Chromium 的 DNS rebinding 防護——
+  nip.io 是「公開網域解析到私有位址」，正是它盯的目標（main.log：
+  `Blocked subresource to private-resolving host`）。判斷依據是**頁面自己的來源**，
+  不是請求的目標：從 127.0.0.1 那頁反過來要 nip.io 的資料是通的。頂層導航不受影響。
+- **換到 127.0.0.1 就全通**：fetch、POST、EventSource、img、script src，連外部網域
+  （fonts.googleapis.com）都 PASS。
+- **跳過去只能靠頁面內導航**。index.html 的第一段 script 判斷 hostname 含 nip.io
+  就 `location.replace()` 到 127.0.0.1。**伺服器 302 不行**，面板會判定成外部連結
+  丟給系統瀏覽器（兩種都實測過）。那段 script 必須留在 head 最前面，趕在瀏覽器
+  開始抓字型等資產之前跳走。
+
+所以正常路徑是：使用者點 nip.io 連結，面板開啟，頁面自己跳到 127.0.0.1，
+之後走 live 模式（fetch + SSE），不重載也不閃。
 
 由此推出三條**不可違反的鐵律**：
 
-1. **前端必須維持單檔自包含**（vite-plugin-singlefile）。任何外部資產引用在面板裡
-   直接消失。新增依賴時確認它會被 inline。**字型也不例外**：web font 的
-   `<link rel=stylesheet>` 還會 block 首次繪製，等於每次重載都先卡一輪必定失敗的
-   請求，所以 index.html 一律走系統字型堆疊，不得引入 Google Fonts。
-2. **任何新功能必須在 static 模式下可用**。live 模式（fetch+SSE）只是增強，不是基準。
-   static 模式的手段只有三種：資料由伺服器嵌進 HTML（`window.__DATA__`，見
+1. **跳轉失敗必須還能用**。static 模式是那條退路，不是遺跡：任何新功能都要在它
+   底下可用。它的手段只有三種——資料由伺服器嵌進 HTML（`window.__DATA__`，見
    api.go 的 `makeIndexHandler`）、UI 狀態放 URL query（`f`/`open`/`pin`）、
    互動用 `<a>` 連結或表單 POST（成敗都 303 回首頁帶 `pushed`/`pushErr` query）。
    模式由開頁時的 fetch 探測決定（api.ts `probeNetwork`）。
-3. **重載後的第一次繪製就必須是完整畫面**（2026-08-27）。static 模式每 10 秒整頁重載，
-   所以首次繪製不是載入過程，而是使用者實際看到的畫面；在它之前畫出來的任何東西
-   （placeholder、空白、還沒定案的模式）都會被看成閃爍。維持這件事靠三個機制，
-   改動時三個都不能斷：
+2. **前端維持單檔自包含**（vite-plugin-singlefile）。跳轉失敗時停在 nip.io，
+   那裡什麼外部資產都拿不到，單檔是唯一還能完整渲染的形態。唯一的例外是
+   index.html 那行 Google Fonts：它在 127.0.0.1 底下載得到（實測 PASS），
+   跳轉失敗時就退回系統字型堆疊——那是可接受的降級，不是壞掉。
+3. **第一次繪製就必須是完整畫面**。static 退路每 10 秒整頁重載，那時首次繪製不是
+   載入過程而是使用者實際看到的畫面；live 模式雖然不重載，開頁那一次同樣受益。
+   靠 vite.config.ts 的 `blockingInlineScript`：把打包格式壓成 IIFE、script 標籤降成
+   同步、位置搬到 `#root` 之後，React 才會在首次繪製前掛載完。**改回 `type="module"`
+   就等於改回 defer，「載入中」那一幀會立刻回來。**
 
-   - vite.config.ts 的 `blockingInlineScript`：把打包格式壓成 IIFE、script 標籤降成
-     同步、位置搬到 `#root` 之後，React 才會在首次繪製前掛載完。**改回
-     `type="module"` 就等於改回 defer，閃爍會立刻回來。**
-   - App.tsx 的 `rememberedMode()`：探測要一次往返才有結果，首幀等不了。先用記得的
-     結果開場（localStorage 是 per-origin 的，面板的 nip.io 與瀏覽器的 127.0.0.1
-     各記各的，不會互相污染），探測回來才修正。猜錯只是慢一步，不猜則每次重載都
-     用 live 狀態畫一次再換成 URL 狀態，那是必定發生的重排。
-   - App.tsx 的 `stashScroll()`／`pendingScroll`：重載前記下捲動位置，掛載時復原。
-     只認自動重載那一次，使用者自己點連結導航不受影響。
+   static 退路另外靠兩個機制維持連續性，改動時別拆：App.tsx 的 `rememberedMode()`
+   先用記得的模式開場（探測要一次往返，首幀等不了；localStorage 按來源分開，
+   nip.io 與 127.0.0.1 各記各的），以及 `stashScroll()`／`pendingScroll` 在自動重載
+   前後保住捲動位置。
 
 ## 架構不變量
 
@@ -71,6 +80,12 @@ main.log 證實為 DNS rebinding 防護 `Blocked subresource to private-resolvin
   連結還是 onClick。改 UI 時兩條路都要接。
 - **static 模式的重載只在看得見時發生**：分頁被藏起來就跳過，切回來且資料已超過
   `RELOAD_MS` 才補一次。推送框開著時整個暫停。
+- **退路的觸發與表現**（2026-08-27）：跳到 127.0.0.1 這件事踩在一個本專案控制不了
+  的行為上——面板肯不肯讓頁面自己導航過去。哪天 Desktop 改版不肯了，使用者就停在
+  nip.io，`probeNetwork` 探測失敗，前端自動退回 static：資料改由伺服器嵌進 HTML、
+  每 10 秒整頁重載、互動走連結與表單 POST、字型退回系統字型堆疊。**功能一項不缺，
+  代價是重載看得見。** 怎麼分辨：右上角「資料 N 秒前 ⟳」是 static，綠點「即時」
+  是 live。看到前者不代表壞了，代表退路正在生效。
 
 ## 視覺定稿（勿隨手改）
 
@@ -85,6 +100,13 @@ main.log 證實為 DNS rebinding 防護 `Blocked subresource to private-resolvin
 
 - `curl http://127.0.0.1:7777/api/repos | python3 -m json.tool` 看摘要。
 - `curl "http://127.0.0.1:7777/?open=<id>"` 檢查嵌入的 `window.__DATA__`。
-- SSE 全鏈：開著 `curl -N /api/events`，在任一 repo commit，應在 1 秒內收到事件。
-- 面板端行為只能請使用者實測；`/diag` 頁自動輸出該環境的能力清單。
+- SSE 全鏈：開著 `curl -N /api/events`，**連上就該立刻收到 header 與 `: open`**
+  （沒有這行等於 header 沒沖出去，客戶端會卡在 CONNECTING 直到下一個事件或 25 秒
+  後的心跳）；接著在任一 repo commit，應在 1 秒內收到事件。只測「有事件」會漏掉
+  安靜時段連不上的情況——2026-08-27 就是這樣漏掉的。
+- 面板端行為只能請使用者實測；`/diag` 頁自動輸出該環境的能力清單（fetch 四種寫法、
+  POST、img、script src、EventSource、外部 CSS，外加三顆手動按的導航測試）。
+  **請使用者測時要給 `http://127-0-0-1.nip.io:7777/tolocal?via=js`**——直接給
+  127.0.0.1 的連結會開在系統瀏覽器，測到的不是面板。看 userAgent 有沒有
+  `Claude/…MSIX` 就能分辨。
 - 推送端點測錯誤路徑就好（不存在的 remote/branch），不要對真 repo 測成功路徑。

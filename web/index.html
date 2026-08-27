@@ -3,11 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // 這段必須留在 head 最前面。面板只有 nip.io 這個網址點得開，但從 nip.io
+      // 載入的頁面會被 Chromium 的 DNS rebinding 防護擋掉所有子資源請求
+      // （fetch／SSE／img／外部 CSS 全滅，見 /diag）；換到 127.0.0.1 就十項全通。
+      // 跳法只能是頁面內導航：伺服器 302 會被面板判定成外部連結丟給系統瀏覽器
+      // （2026-08-27 兩種都在面板實測過）。擺在最前面是為了趕在瀏覽器開始去要
+      // 下面那些資產之前就跳走。
+      // 跳不過去也無妨——頁面會照常以 static 模式渲染，只是字型退回系統堆疊。
+      if (location.hostname.indexOf('nip.io') >= 0) {
+        var p = location.port ? ':' + location.port : ''
+        location.replace('http://127.0.0.1' + p + location.pathname + location.search)
+      }
+    </script>
     <title>canopy</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='4' cy='4' r='2.4' fill='%236cb0f0'/><circle cx='12' cy='8' r='2.4' fill='%2358c98b'/><circle cx='4' cy='12' r='2.4' fill='%236cb0f0'/><path d='M4 6v4M6 5l4 2' stroke='%23555f6b' stroke-width='1.4' fill='none'/></svg>" />
-    <!-- 這裡不可以有任何外部資產（見 CLAUDE.md 鐵律 1）。面板的殼會擋掉它，
-         而 <link rel=stylesheet> 是 render-blocking 的——static 模式每 10 秒重載一次，
-         等於每次都先卡一輪必定失敗的請求才畫得出畫面。字型改走系統堆疊。 -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" />
       <style>html { background: #0f1216; } body { background: #0f1216; color: #8b95a3; font-family: sans-serif; }</style>
   </head>
   <body>
