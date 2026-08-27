@@ -106,7 +106,8 @@ deploy/   canopy.service（systemd user unit）
   安靜時段連不上的情況——2026-08-27 就是這樣漏掉的。
 - 面板端行為只能請使用者實測；`/diag` 頁自動輸出該環境的能力清單（fetch 四種寫法、
   POST、img、script src、EventSource、外部 CSS，外加三顆手動按的導航測試）。
-  **請使用者測時要給 `http://127-0-0-1.nip.io:7777/tolocal?via=js`**——直接給
-  127.0.0.1 的連結會開在系統瀏覽器，測到的不是面板。看 userAgent 有沒有
+  **請使用者測時要給 `http://127-0-0-1.nip.io:7777/diag?jump=1`**——直接給
+  127.0.0.1 的連結會開在系統瀏覽器，測到的不是面板；不帶 `jump=1` 則測到的是
+  nip.io 底下的能力（全滅），那是判斷退路還需不需要的依據。看 userAgent 有沒有
   `Claude/…MSIX` 就能分辨。
 - 推送端點測錯誤路徑就好（不存在的 remote/branch），不要對真 repo 測成功路徑。

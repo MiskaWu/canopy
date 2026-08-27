@@ -20,6 +20,14 @@ button{background:#6cb0f0;color:#0f1216;border:none;border-radius:6px;padding:4p
 </p>
 <p class="dim">自動測試會自己跑完；A/B/C 三顆手動按，按完頁面有換掉（或出現 echo 文字）就是通。</p>
 <script>
+// ?jump=1 才跳到 127.0.0.1 再測，用來重現面板的正常路徑（index.html 會自己跳）。
+// 不帶參數就留在原地——診斷頁的本分是照實反映「當前這個來源」的能力，
+// 從 nip.io 進來測到的全滅結果，正是判斷退路還需不需要的依據。
+if (location.search.indexOf('jump=1') >= 0 && location.hostname.indexOf('nip.io') >= 0) {
+  location.replace('http://127.0.0.1:' + location.port + '/diag')
+}
+</script>
+<script>
 const out = document.getElementById('out');
 function line(name, pass, detail) {
   const d = document.createElement('div');
