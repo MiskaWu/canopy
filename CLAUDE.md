@@ -27,15 +27,31 @@ main.log 證實為 DNS rebinding 防護 `Blocked subresource to private-resolvin
 - **頁面執行期的所有網路請求全滅**：fetch（同源也一樣）、EventSource、img/script
   子資源、Google Fonts，一律 Failed to fetch。
 
-由此推出兩條**不可違反的鐵律**：
+由此推出三條**不可違反的鐵律**：
 
 1. **前端必須維持單檔自包含**（vite-plugin-singlefile）。任何外部資產引用在面板裡
-   直接消失。新增依賴時確認它會被 inline。
+   直接消失。新增依賴時確認它會被 inline。**字型也不例外**：web font 的
+   `<link rel=stylesheet>` 還會 block 首次繪製，等於每次重載都先卡一輪必定失敗的
+   請求，所以 index.html 一律走系統字型堆疊，不得引入 Google Fonts。
 2. **任何新功能必須在 static 模式下可用**。live 模式（fetch+SSE）只是增強，不是基準。
    static 模式的手段只有三種：資料由伺服器嵌進 HTML（`window.__DATA__`，見
    api.go 的 `makeIndexHandler`）、UI 狀態放 URL query（`f`/`open`/`pin`）、
    互動用 `<a>` 連結或表單 POST（成敗都 303 回首頁帶 `pushed`/`pushErr` query）。
    模式由開頁時的 fetch 探測決定（api.ts `probeNetwork`）。
+3. **重載後的第一次繪製就必須是完整畫面**（2026-08-27）。static 模式每 10 秒整頁重載，
+   所以首次繪製不是載入過程，而是使用者實際看到的畫面；在它之前畫出來的任何東西
+   （placeholder、空白、還沒定案的模式）都會被看成閃爍。維持這件事靠三個機制，
+   改動時三個都不能斷：
+
+   - vite.config.ts 的 `blockingInlineScript`：把打包格式壓成 IIFE、script 標籤降成
+     同步、位置搬到 `#root` 之後，React 才會在首次繪製前掛載完。**改回
+     `type="module"` 就等於改回 defer，閃爍會立刻回來。**
+   - App.tsx 的 `rememberedMode()`：探測要一次往返才有結果，首幀等不了。先用記得的
+     結果開場（localStorage 是 per-origin 的，面板的 nip.io 與瀏覽器的 127.0.0.1
+     各記各的，不會互相污染），探測回來才修正。猜錯只是慢一步，不猜則每次重載都
+     用 live 狀態畫一次再換成 URL 狀態，那是必定發生的重排。
+   - App.tsx 的 `stashScroll()`／`pendingScroll`：重載前記下捲動位置，掛載時復原。
+     只認自動重載那一次，使用者自己點連結導航不受影響。
 
 ## 架構不變量
 
@@ -53,6 +69,8 @@ main.log 證實為 DNS rebinding 防護 `Blocked subresource to private-resolvin
   localhost（見 `originAllowed`），無 Origin（curl）放行。改動這段時不得放寬這些。
 - **雙模共用一份元件**：Graph.tsx 是純渲染；App.tsx 依 `isStatic` 決定互動元素是
   連結還是 onClick。改 UI 時兩條路都要接。
+- **static 模式的重載只在看得見時發生**：分頁被藏起來就跳過，切回來且資料已超過
+  `RELOAD_MS` 才補一次。推送框開著時整個暫停。
 
 ## 視覺定稿（勿隨手改）
 
