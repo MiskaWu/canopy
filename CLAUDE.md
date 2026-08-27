@@ -51,10 +51,9 @@ deploy/   canopy.service（systemd user unit）
    東西才受限，手段有三種：
 
    - 資料由伺服器嵌進 HTML（`window.__DATA__`，見 api.go 的 `makeIndexHandler`）。
-   - 要撐過重載的 UI 狀態放 URL query（`f`/`open`/`pin`）；活不過重載也無所謂的
-     放 React state 就好。**已知缺口**：`quietOpen`（安靜清單的展開）是 React
-     state，static 退路上每 10 秒重載會把它收合回去。目前接受這個缺陷，真要修
-     就比照 `f`/`open`/`pin` 加一個 query 參數。
+   - 要撐過重載的 UI 狀態放 URL query（`f`/`open`/`pin`/`quiet`）；活不過重載也
+     無所謂的放 React state 就好。判準是「重載後收合回去會不會讓人覺得壞了」——
+     `quiet`（安靜清單的展開）本來是 React state，就是這樣被抓出來補上的。
    - 送資料給伺服器用 `<a>` 連結或表單 POST。推送成敗都 303 回首頁帶
      `pushed`/`pushErr` query——例外是 Origin 沒過白名單，那條在 `handlePush`
      最前面就 JSON 403 回絕，不走 303。
@@ -98,8 +97,10 @@ deploy/   canopy.service（systemd user unit）
   **`http://127.0.0.1:7777`——跳轉之後的正常路徑就是它，拿掉推送會全壞**，
   外加 vite dev 的 5173 兩種寫法。改動這段時不得放寬這些。
 - **雙模共用一份元件**：Graph.tsx 是純渲染；App.tsx 依 `isStatic` 決定**要撐過重載
-  的**互動（換過濾、展開、釘選）是連結還是 onClick。改 UI 時兩條路都要接。
-  不必撐過重載的（開推送框、摺疊安靜清單）兩模都走 onClick，不用分支。
+  的**互動（換過濾、展開、釘選、安靜清單摺疊）是連結還是 onClick。改 UI 時兩條路
+  都要接，連 `.fold` 這種樣式也要顧到——它同時當 `<div>` 和 `<a>` 用，所以 CSS 裡
+  明寫了 `display: block` 與 `text-decoration: none`。真正不必撐過重載的只有開推送
+  框，那個兩模都走 onClick，不用分支。
 - **static 模式的重載只在看得見時發生**：分頁被藏起來就跳過，切回來且資料已超過
   `RELOAD_MS` 才補一次。推送框開著時整個暫停。
 - **退路的觸發與表現**（2026-08-27）：跳到 127.0.0.1 這件事踩在一個本專案控制不了
