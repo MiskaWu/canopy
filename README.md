@@ -34,7 +34,9 @@
 
 ```bash
 make            # 前端 build → 嵌入 → 編譯出單一執行檔 ./canopy
-make install    # 部署 systemd user unit 並啟動（Linux）
+make install    # build → 部署 unit 複本 → enable ＋ restart（冪等）
+make status     # 對帳：binary 在不在、unit 複本有沒有分岔、服務與面板活著沒
+make uninstall  # 拆服務與 unit 複本；build 產物另由 make clean 清
 ```
 
 前端以單檔模式打包（所有 JS/CSS 內嵌），再用 `go:embed` 進 binary，

@@ -13,7 +13,7 @@ deploy/   canopy.service（systemd user unit）
 ```
 
 - `make` = web build → `cp web/dist server/dist` → `go vet` + `go build -o canopy ./server`。
-- `make install` 部署並重啟 systemd user unit。
+- `make install` 部署並重啟 systemd user unit（含 enable，冪等）；`make status` 對帳腳印（binary／unit 複本分岔／服務／面板）；`make uninstall` 反安裝。腳印清單宣告在 Makefile 開頭。
 - 前端單獨開發：`cd web && npm run dev`（vite 會 proxy /api 到 127.0.0.1:7777）。
 - Go 端沒 dist 會編譯失敗（embed），先跑過一次 `make web`。
 
