@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // ── SSE hub ─────────────────────────────────────────────────
@@ -35,8 +33,12 @@ func (h *Hub) broadcast(v any) {
 	}
 }
 
-func (h *Hub) handleSSE(c *gin.Context) {
-	w := c.Writer
+func (h *Hub) handleSSE(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", 500)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	ch := make(chan []byte, 16)
@@ -52,33 +54,39 @@ func (h *Hub) handleSSE(c *gin.Context) {
 	// 回應就一直停在 CONNECTING。沒這一行的話，安靜時段要等到下一個事件或 25 秒後
 	// 的心跳才會 open，客戶端早就 timeout 了（2026-08-27 在面板診斷頁抓到）。
 	fmt.Fprint(w, ": open\n\n")
-	w.Flush()
+	fl.Flush()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
 	for {
 		select {
-		case <-c.Request.Context().Done():
+		case <-r.Context().Done():
 			return
 		case data := <-ch:
 			fmt.Fprintf(w, "data: %s\n\n", data)
-			w.Flush()
+			fl.Flush()
 		case <-heartbeat.C:
 			fmt.Fprint(w, ": ping\n\n")
-			w.Flush()
+			fl.Flush()
 		}
 	}
 }
 
 // ── helpers ─────────────────────────────────────────────────
 
-func writeErr(c *gin.Context, code int, msg string) {
-	c.JSON(code, gin.H{"error": msg})
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, code int, msg string) {
+	w.WriteHeader(code)
+	writeJSON(w, map[string]string{"error": msg})
 }
 
 // originAllowed：CSRF 防線。瀏覽器發的跨站請求會帶 Origin，
 // 不在白名單就拒絕；沒有 Origin 的（curl、同機腳本）視為本機使用者放行。
-func originAllowed(c *gin.Context) bool {
-	o := c.GetHeader("Origin")
+func originAllowed(r *http.Request) bool {
+	o := r.Header.Get("Origin")
 	if o == "" {
 		return true
 	}
@@ -117,28 +125,29 @@ func (s *Store) summaries() []Summary {
 	return sums
 }
 
-func (s *Store) handleRepos(c *gin.Context) {
-	c.JSON(200, gin.H{
+func (s *Store) handleRepos(w http.ResponseWriter, r *http.Request) {
+	sums := s.summaries()
+	writeJSON(w, map[string]any{
 		"root":      s.root,
 		"lastFetch": s.lastFetch.Load(),
-		"repos":     s.summaries(),
+		"repos":     sums,
 	})
 }
 
-func (s *Store) handleRepo(c *gin.Context) {
-	repo := s.repo(c.Query("id"))
+func (s *Store) handleRepo(w http.ResponseWriter, r *http.Request) {
+	repo := s.repo(r.URL.Query().Get("id"))
 	if repo == nil {
-		writeErr(c, 404, "unknown repo")
+		writeErr(w, 404, "unknown repo")
 		return
 	}
 	repo.mu.Lock()
 	snap := repo.snapshot
 	repo.mu.Unlock()
 	if snap == nil {
-		writeErr(c, 503, "snapshot not ready")
+		writeErr(w, 503, "snapshot not ready")
 		return
 	}
-	c.JSON(200, snap)
+	writeJSON(w, snap)
 }
 
 type previewCommit struct {
@@ -146,19 +155,20 @@ type previewCommit struct {
 	Subject string `json:"subject"`
 }
 
-func (s *Store) handlePushPreview(c *gin.Context) {
-	repo, branch, remote := s.repo(c.Query("id")), c.Query("branch"), c.Query("remote")
+func (s *Store) handlePushPreview(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	repo, branch, remote := s.repo(q.Get("id")), q.Get("branch"), q.Get("remote")
 	if repo == nil {
-		writeErr(c, 404, "unknown repo")
+		writeErr(w, 404, "unknown repo")
 		return
 	}
 	br := findBranch(repo, branch)
 	if br == nil {
-		writeErr(c, 404, "unknown branch")
+		writeErr(w, 404, "unknown branch")
 		return
 	}
 	pv := previewFor(repo.Path, br)
-	c.JSON(200, gin.H{
+	writeJSON(w, map[string]any{
 		"commits":    pv.Commits,
 		"noUpstream": pv.NoUpstream,
 		"upstream":   br.Upstream,
@@ -202,16 +212,16 @@ type bootData struct {
 	Previews    map[string]map[string]pushPreviewData `json:"previews"`
 }
 
-func (s *Store) makeIndexHandler(indexHTML []byte) gin.HandlerFunc {
+func (s *Store) makeIndexHandler(indexHTML []byte) http.HandlerFunc {
 	const marker = "window.__DATA__ = null;"
-	return func(c *gin.Context) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		bd := bootData{
 			Root: s.root, LastFetch: s.lastFetch.Load(), GeneratedAt: time.Now().Unix(),
 			Repos:     s.summaries(),
 			Snapshots: map[string]*Snapshot{},
 			Previews:  map[string]map[string]pushPreviewData{},
 		}
-		for _, id := range strings.Split(c.Query("open"), ",") {
+		for _, id := range strings.Split(r.URL.Query().Get("open"), ",") {
 			repo := s.repo(id)
 			if repo == nil {
 				continue
@@ -234,12 +244,12 @@ func (s *Store) makeIndexHandler(indexHTML []byte) gin.HandlerFunc {
 		}
 		data, err := json.Marshal(bd) // json.Marshal 會轉義 <>&，嵌進 <script> 安全
 		if err != nil {
-			c.String(500, err.Error())
+			http.Error(w, err.Error(), 500)
 			return
 		}
-		c.Header("Cache-Control", "no-store")
-		c.Data(200, "text/html; charset=utf-8",
-			bytes.Replace(indexHTML, []byte(marker), append([]byte("window.__DATA__ = "), data...), 1))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(bytes.Replace(indexHTML, []byte(marker), append([]byte("window.__DATA__ = "), data...), 1))
 	}
 }
 
@@ -252,30 +262,34 @@ type pushReq struct {
 
 // handlePush：唯一會改變狀態的端點。
 // 指令固定由伺服器組成 `git push <remote> <branch>`，前端傳不進任何旗標。
-func (s *Store) handlePush(c *gin.Context) {
-	if !originAllowed(c) {
-		writeErr(c, 403, "origin not allowed")
+func (s *Store) handlePush(w http.ResponseWriter, r *http.Request) {
+	if !originAllowed(r) {
+		writeErr(w, 403, "origin not allowed")
 		return
 	}
 	var req pushReq
-	isForm := strings.HasPrefix(c.ContentType(), "application/x-www-form-urlencoded")
+	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
 	var back string
 	if isForm {
-		req = pushReq{
-			ID: c.PostForm("id"), Branch: c.PostForm("branch"),
-			Remote: c.PostForm("remote"), ConfirmMain: c.PostForm("confirmMain") != "",
+		if err := r.ParseForm(); err != nil {
+			writeErr(w, 400, "bad form")
+			return
 		}
-		back = strings.TrimPrefix(c.PostForm("back"), "?")
-	} else if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		writeErr(c, 400, "bad request body")
+		req = pushReq{
+			ID: r.FormValue("id"), Branch: r.FormValue("branch"),
+			Remote: r.FormValue("remote"), ConfirmMain: r.FormValue("confirmMain") != "",
+		}
+		back = strings.TrimPrefix(r.FormValue("back"), "?")
+	} else if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, 400, "bad request body")
 		return
 	}
 	// 表單模式的回應是導航：成敗都 303 回首頁，結果放 query 讓頁面顯示
 	fail := func(code int, msg string) {
 		if isForm {
-			c.Redirect(http.StatusSeeOther, "/?"+back+"&pushErr="+url.QueryEscape(msg))
+			http.Redirect(w, r, "/?"+back+"&pushErr="+url.QueryEscape(msg), http.StatusSeeOther)
 		} else {
-			writeErr(c, code, msg)
+			writeErr(w, code, msg)
 		}
 	}
 	repo := s.repo(req.ID)
@@ -318,10 +332,10 @@ func (s *Store) handlePush(c *gin.Context) {
 	}
 	s.rebuild(req.ID)
 	if isForm {
-		c.Redirect(http.StatusSeeOther, "/?"+back+"&pushed="+url.QueryEscape(req.Branch))
+		http.Redirect(w, r, "/?"+back+"&pushed="+url.QueryEscape(req.Branch), http.StatusSeeOther)
 		return
 	}
-	c.JSON(200, gin.H{"ok": true, "output": strings.TrimSpace(out)})
+	writeJSON(w, map[string]any{"ok": true, "output": strings.TrimSpace(out)})
 }
 
 func findBranch(repo *Repo, name string) *Branch {
