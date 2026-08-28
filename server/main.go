@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 //go:embed mockup.html
@@ -69,31 +67,32 @@ func main() {
 	go store.slowLoop()
 	go store.rescanLoop(watcher)
 
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(gin.Recovery())
-
-	r.GET("/api/repos", store.handleRepos)
-	r.GET("/api/repo", store.handleRepo)
-	r.GET("/api/push-preview", store.handlePushPreview)
-	r.POST("/api/push", store.handlePush)
-	r.GET("/api/events", hub.handleSSE)
-	r.GET("/mockup", func(c *gin.Context) {
-		c.Data(200, "text/html; charset=utf-8", mockupHTML)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/repos", store.handleRepos)
+	mux.HandleFunc("GET /api/repo", store.handleRepo)
+	mux.HandleFunc("GET /api/push-preview", store.handlePushPreview)
+	mux.HandleFunc("POST /api/push", store.handlePush)
+	mux.HandleFunc("GET /api/events", hub.handleSSE)
+	mux.HandleFunc("/mockup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(mockupHTML)
 	})
-	r.GET("/diag", func(c *gin.Context) {
-		c.Data(200, "text/html; charset=utf-8", diagHTML)
+	mux.HandleFunc("/diag", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(diagHTML)
 	})
-	// 診斷頁會用 GET 和 POST 兩種方法打這個端點，不限方法
-	r.Any("/api/diag", func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.String(200, "diag ok method=%s origin=%q", c.Request.Method, c.GetHeader("Origin"))
+	mux.HandleFunc("/api/diag", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		fmt.Fprintf(w, "diag ok method=%s origin=%q", r.Method, r.Header.Get("Origin"))
 	})
-	r.GET("/api/diag.png", func(c *gin.Context) {
-		c.Data(200, "image/png", diagPNG)
+	mux.HandleFunc("/api/diag.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(diagPNG)
 	})
-	r.GET("/api/diag.js", func(c *gin.Context) {
-		c.Data(200, "text/javascript", []byte("window.__diagjs='loaded'"))
+	mux.HandleFunc("/api/diag.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, "window.__diagjs='loaded'")
 	})
 
 	// 單檔前端 + 資料嵌入：每次載入首頁時把摘要與展開中 repo 的快照
@@ -102,12 +101,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	r.GET("/", store.makeIndexHandler(indexHTML))
-	// 不認得的路徑一律回首頁（沿用 mux 時代 "/" 兜底的行為）
-	r.NoRoute(func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/")
+	index := store.makeIndexHandler(indexHTML)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		index(w, r)
 	})
 
 	fmt.Printf("canopy listening on http://%s (root=%s)\n", *addr, *root)
-	log.Fatal(http.ListenAndServe(*addr, r))
+	log.Fatal(http.ListenAndServe(*addr, mux))
 }
