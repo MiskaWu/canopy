@@ -23,6 +23,11 @@ install: all
 	systemctl --user daemon-reload
 	systemctl --user enable canopy 2>/dev/null || true
 	systemctl --user restart canopy
+	@for i in $$(seq 1 20); do \
+		curl -s -m 1 -o /dev/null http://127.0.0.1:7777/ && break; \
+		sleep 0.5; \
+	done  # restart 後服務要一下才開始監聽，等它起來再對帳，等不到就讓 status 報「沒回應」
+	@$(MAKE) --no-print-directory status
 
 status:
 	@test -x canopy && echo "ok    binary ./canopy（$$(stat -c %y canopy | cut -d. -f1) build）" || echo "缺    binary —— 跑 make"
