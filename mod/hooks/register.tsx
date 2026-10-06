@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { CanopyBranch, CanopySnapshot } from '../types'
 import { buildSnapshot, NotARepo, projectDirName, type Git, type SessionProbe } from './git'
 import { layoutGraph } from './lanes'
-import { ago, laneColor, renderSvg } from './svg'
+import { ago, laneColor, renderSvg, worktreeLabel } from './svg'
 import { textGraph, type Cell } from './textgraph'
 
 // canopy 的 mod 版：session 所在 repo 有未推 commit 時，輸入框上方出現一列提示，
@@ -97,7 +97,7 @@ export function pendingOf(snap: CanopySnapshot | null): Pending | null {
 
 async function openPane($: $): Promise<void> {
   const snap = await read($, snapshot)
-  await $.ui.open({ id: PANE, title: snap === null ? 'canopy' : `canopy · ${snap.repoName}`, columns: 120 })
+  await $.ui.open({ id: PANE, title: snap === null ? 'git 線圖' : `git 線圖 · ${snap.repoName}`, columns: 120 })
   await refresh($)
 }
 
@@ -116,7 +116,7 @@ function badges(b: CanopyBranch, snap: CanopySnapshot, nowMs: number): { text: s
   if (!snap.noRemote && b.ahead > 0) out.push({ text: `↑${b.ahead}`, color: 'warning' })
   if (b.behind > 0) out.push({ text: `↓${b.behind}`, isDim: true })
   const wt = b.worktree
-  if (wt !== null && !wt.isMain) out.push({ text: `⌂ ${wt.name}`, isDim: true })
+  if (wt !== null && !wt.isMain) out.push({ text: worktreeLabel(b), isDim: true })
   if (wt?.session) out.push(wt.session.isLive ? { text: '● 進行中', color: 'success' } : { text: `○ ${ago(wt.session.lastActive, nowMs)}`, isDim: true })
   if (wt?.isDirty) out.push({ text: '✎ 未commit', color: 'warning' })
   if (b.noUpstream && !snap.noRemote) out.push({ text: '無upstream', isDim: true })
@@ -228,27 +228,31 @@ export const register: Register = on => {
     snap.commits.forEach((c, i) => tipColor.set(c.sha, laneColor(layout.lanes[i] as number)))
     const { shown, rest } = listedBranches(snap)
 
+    // 每一行都是一段文字（內嵌上色的片段），窄的時候整段換行，不會被 flex 擠成好幾欄
+    const home = await $.env.get('HOME')
+    const path = home !== undefined && snap.repoPath.startsWith(`${home}/`) ? `~${snap.repoPath.slice(home.length)}` : snap.repoPath
     const header = (
       <Box flexDirection="column">
-        <Box flexDirection="row" gap={1}>
+        <Text>
           <Text bold>{snap.repoName}</Text>
-          <Text dimColor wrap="truncate-start">
-            {snap.repoPath}
+          <Text dimColor>
+            {'  '}
+            {path} · {ago(Math.floor(snap.builtAt / 1000), now)} 前更新
           </Text>
-          <Text dimColor>· {ago(Math.floor(snap.builtAt / 1000), now)} 前更新</Text>
-        </Box>
+        </Text>
         {shown.map(b => (
-          <Box flexDirection="row" gap={1}>
+          <Text>
             <Text color={tipColor.get(b.sha)} dimColor={!tipColor.has(b.sha)} bold={b.isCurrent}>
               {b.isCurrent ? '▸ ' : '  '}
               {b.name}
             </Text>
             {badges(b, snap, now).map(badge => (
               <Text color={badge.color} dimColor={badge.isDim}>
+                {'  '}
                 {badge.text}
               </Text>
             ))}
-          </Box>
+          </Text>
         ))}
         {rest > 0 && <Text dimColor>  …另有 {rest} 條分支沒列出（已合併、沒在動）</Text>}
       </Box>
@@ -286,13 +290,14 @@ export const register: Register = on => {
     }
 
     const { Svg } = $.ui.resolve(e)
-    const width = Math.max(560, Math.min(1400, Math.round(e.props.bodyColumns * 7.8)))
+    // 以圖片畫（不開 isInteractive）：iframe 不給高度就只有 150px，圖片則照原比例、寬不超過欄位
+    const width = Math.max(360, Math.min(1600, Math.round(e.props.bodyColumns * 7.8)))
     const svg = renderSvg(snap, width, now)
     return (
       <Box flexDirection="column" gap={1}>
         {header}
         {toolbar}
-        <Svg source={svg.source} alt={`${snap.repoName} 最近 ${svg.rows} 筆 commit 的線圖`} isInteractive />
+        <Svg source={svg.source} alt={`${snap.repoName} 最近 ${svg.rows} 筆 commit 的線圖`} />
         {svg.rows < snap.commits.length && <Text dimColor>線圖只畫到第 {svg.rows} 筆（圖的大小有上限）。</Text>}
       </Box>
     )

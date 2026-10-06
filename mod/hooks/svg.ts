@@ -54,13 +54,12 @@ function draw(snap: CanopySnapshot, rowCount: number, W: number, nowMs: number):
     `<style>`,
     `text{font-family:${SANS};font-size:12.5px;fill:#d9dfe7;dominant-baseline:central}`,
     `.m{font-family:${MONO};font-size:11px}.b{font-weight:600}.f{fill:#66707d}.d{fill:#8b95a3}`,
-    `.r .h{fill:transparent}.r:hover .h{fill:#1b222b}`,
     `.e{fill:none;stroke-width:2}`,
     `</style>`,
     `<rect width="${W}" height="${H}" rx="10" fill="#151a20"/>`,
   )
 
-  // 列：hover 底色、分隔線、tooltip、文字。先畫，線圖疊在上面不被切斷。
+  // 列：分隔線與文字。先畫，線圖疊在上面不被切斷。
   commits.forEach((c, i) => {
     const y = cy(i)
     const top = TOP + i * RH
@@ -71,9 +70,7 @@ function draw(snap: CanopySnapshot, rowCount: number, W: number, nowMs: number):
     const local = new Set(tips.map(b => b.name))
     const remoteRefs = c.refs.filter(r => !local.has(r) && !r.endsWith('/HEAD'))
     const isMerge = c.parents.length > 1
-    const tip = `${c.sha.slice(0, 10)} · ${c.author} · ${ago(c.time, nowMs)} 前\n${c.subject}`
 
-    out.push(`<g class="r"><title>${esc(tip)}</title><rect class="h" x="0" y="${top}" width="${W}" height="${RH}"/>`)
     if (i > 0) out.push(`<line x1="${tx - 4}" y1="${top}" x2="${W - 8}" y2="${top}" stroke="#1d242c"/>`)
 
     let x = tx
@@ -102,7 +99,6 @@ function draw(snap: CanopySnapshot, rowCount: number, W: number, nowMs: number):
     out.push(`<text x="${x}" y="${y}"${isMerge ? ' class="d"' : ''}>${esc(clip(c.subject, room, 7.2))}</text>`)
     out.push(`<text x="${W - 58}" y="${y}" class="m f" text-anchor="end">${c.sha.slice(0, 7)}</text>`)
     out.push(`<text x="${W - 14}" y="${y}" class="m f" text-anchor="end">${ago(c.time, nowMs)}</text>`)
-    out.push(`</g>`)
   })
 
   // 線圖：邊、殘邊、節點
@@ -133,7 +129,7 @@ function branchChips(b: CanopyBranch, col: string, noRemote: boolean, nowMs: num
   const badge = (text: string, fg: string, bg: string, mono = false): Chip => ({ text, fg, bg, border: 'none', mono })
   if (!noRemote && b.ahead > 0) chips.push(badge(`↑${b.ahead}`, '#8ec2f5', '#18293b', true))
   const wt = b.worktree
-  if (wt !== null && !wt.isMain) chips.push(badge(`⌂ ${wt.name}`, '#8b95a3', '#1e252d'))
+  if (wt !== null && !wt.isMain) chips.push(badge(worktreeLabel(b), '#8b95a3', '#1e252d'))
   if (wt?.session) chips.push(wt.session.isLive ? badge('● 進行中', '#84d8a5', '#16301f') : badge(`○ ${ago(wt.session.lastActive, nowMs)}`, '#8b95a3', '#1e252d', true))
   if (wt?.isDirty) chips.push(badge('✎ 未commit', '#f0c98a', '#332a18'))
   if (b.noUpstream && !noRemote) chips.push(badge('無upstream', '#8ec2f5', '#18293b'))
@@ -166,6 +162,12 @@ function edgePath(e: Layout['edges'][number], cx: (lane: number) => number, cy: 
       bend(e.toRow - 1, e.via, e.toRow, e.toLane).replace(/^M[^LC]+/, '')
   }
   return `<path class="e" stroke="${col}" d="${d}"/>`
+}
+
+/** worktree 徽章：資料夾名跟分支名最後一段一樣就不重複寫（claude/xxx 開在 worktrees/xxx 是常態）。 */
+export function worktreeLabel(b: CanopyBranch): string {
+  const name = b.worktree?.name ?? ''
+  return name === b.name.split('/').pop() ? '⌂ worktree' : `⌂ ${name}`
 }
 
 /** 粗估文字寬度（px）：ASCII 一格，CJK 與全形約兩格。 */
