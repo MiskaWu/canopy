@@ -54,7 +54,7 @@ export async function buildSnapshot(io: SnapshotIO, cwd: string, opts: SnapshotO
       const [status, last] = await Promise.all([git(['status', '--porcelain'], w.path), probe(w.path)])
       const session = last === null ? null : { isLive: now - last < LIVE_WINDOW_MS, lastActive: Math.floor(last / 1000) }
       const name = w.path.split('/').pop() ?? w.path
-      return [w.branch, { path: w.path, name, isMain: w.path === repoPath, isDirty: status !== '', session }]
+      return [w.branch, { path: w.path, name, isMain: w.path === repoPath, ...parseStatus(status), session }]
     }),
   )
   const wtByBranch = new Map<string, CanopyWorktree>()
@@ -162,6 +162,21 @@ export function parseWorktrees(out: string): ParsedWorktree[] {
     if (path !== '') result.push({ path, branch, detachedSha: isDetached ? head : null })
   }
   return result
+}
+
+/**
+ * `git status --porcelain` 分成兩種狀態：已追蹤檔案的變更（未 commit），和未追蹤的路徑。
+ * 兩者意思不同：前者是做到一半的工作，後者可能只是該被忽略的東西（例如工具的資料夾），
+ * 要不要忽略由使用者決定（.gitignore），canopy 不替他略過。
+ */
+export function parseStatus(out: string): { changed: number; untracked: string[] } {
+  let changed = 0
+  const untracked: string[] = []
+  for (const line of lines(out)) {
+    if (line.startsWith('?? ')) untracked.push(line.slice(3))
+    else if (!line.startsWith('!! ')) changed++
+  }
+  return { changed, untracked }
 }
 
 /** Claude Code 存放 session 記錄的資料夾名：路徑裡非英數字元一律換成 `-`。 */

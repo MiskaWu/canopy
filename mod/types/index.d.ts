@@ -10,7 +10,8 @@ export type CanopyWorktree = {
   path: string
   name: string
   isMain: boolean
-  isDirty: boolean
+  changed: number // 已追蹤檔案的變更數（修改、刪除、暫存、改名）
+  untracked: string[] // 未追蹤的路徑；git status 已照 .gitignore 過濾，資料夾收成一筆
   session: CanopySession | null
 }
 

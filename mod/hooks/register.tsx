@@ -502,20 +502,32 @@ export const register: Register = (on, options) => {
             {path} · {t.updated(ago(Math.floor(snap.builtAt / 1000), now))}
           </Text>
         </Text>
-        {shown.map(b => (
-          <Text>
-            <Text color={tipColor.get(b.sha)} dimColor={!tipColor.has(b.sha)} bold={b.isCurrent}>
-              {b.isCurrent ? '▸ ' : '  '}
-              {b.name}
-            </Text>
-            {branchBadges(b, snap, t, now).map(badge => (
-              <Text color={BADGE_TEXT[badge.kind].color} dimColor={BADGE_TEXT[badge.kind].isDim}>
-                {'  '}
-                {badge.text}
+        {shown.map(b => {
+          const untracked = b.worktree?.untracked ?? []
+          return (
+            <Box flexDirection="column">
+              <Text>
+                <Text color={tipColor.get(b.sha)} dimColor={!tipColor.has(b.sha)} bold={b.isCurrent}>
+                  {b.isCurrent ? '▸ ' : '  '}
+                  {b.name}
+                </Text>
+                {branchBadges(b, snap, t, now).map(badge => (
+                  <Text color={BADGE_TEXT[badge.kind].color} dimColor={BADGE_TEXT[badge.kind].isDim}>
+                    {'  '}
+                    {badge.text}
+                  </Text>
+                ))}
               </Text>
-            ))}
-          </Text>
-        ))}
+              {/* 未追蹤的是哪些：讓人自己決定要不要加進 .gitignore */}
+              {untracked.length > 0 && (
+                <Text dimColor>
+                  {'    '}
+                  {t.untrackedPaths(untracked.slice(0, 3), Math.max(0, untracked.length - 3))}
+                </Text>
+              )}
+            </Box>
+          )
+        })}
         {rest > 0 && <Text dimColor>  {t.restBranches(rest)}</Text>}
       </Box>
     )
