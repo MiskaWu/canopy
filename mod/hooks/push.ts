@@ -41,7 +41,7 @@ const RULES: readonly { reason: BlockReason; blocks: (f: Facts) => boolean }[] =
   { reason: 'worktree-block', blocks: f => f.isWorktree && f.cfg.worktreePush === 'block' },
   {
     reason: 'worktree-no-key',
-    blocks: f => f.isWorktree && f.cfg.worktreePush === 'allowKey' && !f.snap.remotes.includes(f.snap.worktreePushRemote ?? ''),
+    blocks: f => f.isWorktree && f.cfg.worktreePush === 'perRepo' && !f.snap.remotes.includes(f.snap.worktreePushRemote ?? ''),
   },
 ]
 
@@ -65,11 +65,11 @@ export function planPush(snap: CanopySnapshot, branchName: string, cfg: Config):
 }
 
 /**
- * 推到哪個 remote：worktree 分支在 allowKey 政策下只推到 claude.worktreePushRemote；
+ * 推到哪個 remote：worktree 分支在 perRepo 政策下只推到 repo 的 git config 指名的那個；
  * 其餘照 upstream 的 remote，沒有 upstream 就 origin，再沒有就第一個 remote。
  */
 function chooseRemote(snap: CanopySnapshot, branch: CanopyBranch, cfg: Config, isWorktree: boolean): string {
-  if (isWorktree && cfg.worktreePush === 'allowKey' && snap.worktreePushRemote !== null) return snap.worktreePushRemote
+  if (isWorktree && cfg.worktreePush === 'perRepo' && snap.worktreePushRemote !== null) return snap.worktreePushRemote
   const upstreamRemote = branch.upstream === null ? undefined : snap.remotes.find(r => branch.upstream?.startsWith(`${r}/`))
   return upstreamRemote ?? (snap.remotes.includes('origin') ? 'origin' : (snap.remotes[0] as string))
 }

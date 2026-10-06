@@ -44,9 +44,15 @@
     "worktreePush": {
       "type": "string",
       "title": "Pushing worktree branches",
-      "description": "allow: like any branch. allowKey: only to the remote the repo's local git config claude.worktreePushRemote names. block: never from the pane.",
+      "description": "allow: like any branch. perRepo: only in repositories whose local git config names a remote under the key below, and only to that remote. block: never from the pane.",
       "default": "allow",
-      "options": ["allow", "allowKey", "block"]
+      "options": ["allow", "perRepo", "block"]
+    },
+    "worktreePushKey": {
+      "type": "string",
+      "title": "Git config key for perRepo",
+      "description": "Repository-local git config key that names the remote worktree branches may be pushed to, e.g. git config --local canopy.worktreePushRemote origin. Point it at your own key if you already keep one.",
+      "default": "canopy.worktreePushRemote"
     },
     "protectedBranches": {
       "type": "string",

@@ -80,7 +80,8 @@ Open the pane and press **Settings**; the same values are under `/config`.
 | Commits in the graph | 80 | *More commits* in the pane adds this many again, up to 400 |
 | Graph theme | Follow the app | or always dark, or always light |
 | Push from the pane | Off | see [Pushing](#pushing) |
-| Worktree branches | Push like any branch | or only to the remote named by `claude.worktreePushRemote`, or never |
+| Worktree branches | Push like any branch | or only in repositories that opt in, or never |
+| Opt-in git config key | `canopy.worktreePushRemote` | used by *only in repositories that opt in* |
 | Protected branches | `main,master` | pushing one asks twice; the remote's default branch is always protected |
 | Repositories with a pre-push hook | Push from a terminal instead | or push anyway, skipping the hook |
 
@@ -112,9 +113,17 @@ And what you can choose (defaults in the table above):
   setups such as husky) gets no push button, with the reason shown: push it from a
   terminal so the hook runs.
 - **Worktree branches**: if you treat branches in linked worktrees as scratch work
-  that should not reach a shared remote, choose *Only to `claude.worktreePushRemote`*
-  (a push goes only to the remote named by that repository-local git config key, and
-  repositories without it get no button) or *Never*.
+  that should not reach a shared remote, choose *Never*, or *Only in repositories
+  that opt in*. A repository opts in, and names where its worktree branches may go,
+  with a repository-local git config entry:
+
+  ```bash
+  git config --local canopy.worktreePushRemote origin
+  ```
+
+  Repositories without it get no push button for worktree branches. If you already
+  keep a key like this for your own tooling, set **Opt-in git config key** to it so
+  there is one switch per repository, not two.
 
 ## What it reads
 
@@ -124,9 +133,8 @@ And what you can choose (defaults in the table above):
 - The modification times of the transcripts in `~/.claude/projects/` for the
   "session active" badge. This is Claude Code's own storage and may change between
   releases; when it cannot be read, the badge is left out.
-- For pushing: the remote's default branch, the repository-local git config key
-  `claude.worktreePushRemote` (read only, never written), and whether a pre-push hook
-  exists.
+- For pushing: the remote's default branch, the repository-local git config entry
+  under the opt-in key (read only, never written), and whether a pre-push hook exists.
 
 Nothing leaves your machine unless you press **Push**.
 
