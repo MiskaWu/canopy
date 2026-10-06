@@ -13,8 +13,9 @@ mod/                       插件本體
   .claude-plugin/plugin.json      名稱、版本、userConfig（設定欄位）
   .claude-plugin/types/    引擎每次載入時寫入的型別（自帶 .gitignore，不要手改）
   hooks/hooks.json         → register.tsx
-  hooks/register.tsx       提示列、面板（含設定區）、/canopy、重新整理排程、設定寫回
-  hooks/config.ts          userConfig → 有型別、有界限的 Config
+  hooks/register.tsx       提示列、面板（含設定區、推送區）、/canopy、重新整理排程、設定寫回、執行推送
+  hooks/config.ts          userConfig → 有型別、有界限的 Config（預設值走最佳實踐）
+  hooks/push.ts            推送政策（規則表）、組指令、選 remote：全是純函式
   hooks/i18n.ts            介面文字對照表（en、zh-TW），鍵由型別保證一致
   hooks/badges.ts          分支徽章：面板清單與線圖共用這一份
   hooks/git.ts             跑 git 組快照
@@ -53,16 +54,36 @@ docs/                      README 用的示範截圖（虛構資料）
     `--settings` 蓋不掉它，要靠 `--plugin-dir`。
   - 桌面版：只能請使用者在 Desktop 實看、截圖回來對。SVG 本身可以用 headless
     Chromium 包在 `<img>` 裡截圖檢查。
-- **設定寫回（`$.config.set`）只在測試裡驗過**：真的寫會改到使用者的 settings.json，
-  所以沒在真 session 裡跑過。被拒絕時設定區會顯示原因，那是第一個看的地方。
+- **設定寫回（`$.config.set`）在真 session 驗過**（2026-10-06，使用者在 Desktop
+  把語言切成繁中，寫進 settings.json 的 `pluginConfigs["canopy@inline"]`）。被拒絕時
+  設定區會顯示原因，那是第一個看的地方。
+- **真的推送只由使用者實測**：測試用假的 process.run 驗指令、參數與環境變數；
+  開發時不要為了驗證去按確認推送真 repo。
+- **`plugin test` 說「hooks modules are turned off … rollout switch was saved off」**：
+  是本機快取的發布開關過期，不是測試壞了。照它說的開一次 claude（不送 prompt）
+  刷新開關再跑；刷新後還是這句，才是 mod 真的被遠端關閉（2026-10-06 遇過，刷新即好）。
 - marketplace 安裝可以在隔離的設定資料夾驗：`CLAUDE_CONFIG_DIR=<暫存> claude plugin
   marketplace add <repo>`、`plugin install canopy@canopy`。隔離資料夾沒登入，開不了
   session，所以「從 marketplace 載入後跑起來」沒有實測過。
 
 ## 不可違反的約束
 
-- **只讀**：不 fetch、不推、不寫 repo。推送是使用者自己的事（以及 worktree 推送
-  防護的事），mod 不碰。給別人裝的東西「只讀」也是最容易被信任的一點。
+- **預設只讀**：不 fetch、不寫 repo。唯一的寫入是使用者打開設定後、自己按下確認的
+  `git push`。給別人裝的東西「預設只讀」是最容易被信任的一點，所以 `push` 預設關。
+- **推送只能由人按按鈕觸發**：不註冊推送用的斜線指令或 tool（模型能代跑斜線指令），
+  `/canopy` 不解析任何參數。mod 用 `$.process.run` 跑 git，**不經過 Bash 工具，所以
+  使用者的推送防護 hook 管不到它**：一旦有路徑讓模型觸發推送，就等於繞過防護。
+  tests 裡有「`/canopy push …` 不會推」的斷言。
+- **推送指令由 `push.ts` 固定組成** `git push [-u] <remote> <branch>`：不接受任何旗標、
+  永不 `--force`、remote 必須存在。確認時用最新快照重組，指令和畫面上顯示的不同就換新
+  的、等再按一次。帶 `GIT_TERMINAL_PROMPT=0` 與 60 秒逾時。
+- **推送政策是一張規則表**（`push.ts` 的 `RULES`），依序檢查、第一條擋下的就是理由。
+  新增政策＝加一條規則與它的設定，不在呼叫端加分支。政策擋下的理由一定顯示給人看。
+- **`$.process.run` 跑 git 時 repo 的 hook 不會執行**（引擎文件寫明）：所以預設對有
+  pre-push hook 的 repo 不給推（`respectHooks`），偵測用 `rev-parse --git-path`，
+  會照 `core.hooksPath` 解析。
+- **`claude.worktreePushRemote` 只讀、永不寫**：和使用者的推送防護 hook 共用同一個
+  key，用 `git config --local` 讀（不吃 global）。
 - **git 一律帶 `GIT_OPTIONAL_LOCKS=0`**：`git status` 不搶 index.lock，不會卡到
   正在 commit 的 session。
 - **範圍是 session 所在的 repo**（連同它所有 worktree），不掃整個目錄。

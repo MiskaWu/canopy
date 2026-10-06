@@ -24,7 +24,8 @@ Claude Code 裡的 git 線圖。[English](README.md)
   是否還在跑、有沒有未 commit 的修改、是否已併進主 worktree 的分支。下半是線圖：
   分岔與合併、分支標籤、remote 分支。面板右上角的 ⤢ 可以放大。
 - **自動更新**：每個回合結束、Claude 跑過 git 指令之後，以及定時。
-- **只讀**：只在本機跑 `git` 看狀態，不 fetch、不推、不寫任何東西。
+- **預設只讀**：只在本機跑 `git` 看狀態，不 fetch、不寫任何東西。從面板推送是要
+  自己打開的設定（見[推送](#推送)）。
 
 終端機裡的面板用框線字元畫線圖（見英文 README 的範例）。
 
@@ -63,6 +64,36 @@ claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@can
 | 自動更新 | 每 45 秒 | 0 是關閉計時；回合結束與跑過 git 之後照樣會更新 |
 | 線圖 commit 數 | 80 | 面板的「更多 commit」每按一次再多一份，最多 400 |
 | 線圖主題 | 跟隨介面 | 或固定深色、固定淺色 |
+| 從面板推送 | 關 | 見[推送](#推送) |
+| worktree 分支 | 和一般分支一樣推 | 或只推到 `claude.worktreePushRemote` 指的 remote，或不從面板推 |
+| 受保護分支 | `main,master` | 推這些要確認兩次；remote 的預設分支一律受保護 |
+| 有 pre-push hook 的 repo | 改用終端機推 | 或照推（不執行 hook） |
+
+## 推送
+
+在設定裡打開「從面板推送」，每條有未推 commit 的分支會在面板上多一顆
+`↑N 推送 <分支>`。按下去還不會推：先列出要推的 commit 和確切的指令，你按「推送」
+才執行。
+
+不管怎麼設定都成立的幾件事：
+
+- **只有你按才會推。** canopy 不註冊任何能推送的指令或工具，Claude 沒有辦法透過它
+  推；你為 Claude 的 git 指令設的權限規則與 hook 照常有效。
+- **指令是固定的**：`git push [-u] <remote> <分支>`，只有分支還沒有 upstream 時才加
+  `-u`。沒有任何旗標從外面進來，永不 `--force`。按下 `↑N` 到確認之間指令變了（例如
+  upstream 剛設好），會換成新的指令、等你再按一次：跑的永遠是你看過的那條。
+- **不會卡在問密碼**：git 帶 `GIT_TERMINAL_PROMPT=0` 執行，需要密碼的推送會直接
+  失敗並顯示 git 的訊息。被拒絕等各種失敗都照 git 的原文顯示在面板上。
+
+可以自己選的（預設值見上表）：
+
+- **受保護分支**要確認兩次。remote 的預設分支（`origin/HEAD`）一律在清單裡。
+- **pre-push hook**：Claude Code 替插件跑 git 時不會執行 repo 的 hook。預設對有
+  作用中 pre-push hook 的 repo（含 husky 這類 `core.hooksPath` 設定）不給推送按鈕，
+  並說明原因：請用終端機推，hook 才會跑。
+- **worktree 分支**：如果你把 linked worktree 裡的分支當成不該上共用 remote 的
+  拋棄式工作，選「只推到 `claude.worktreePushRemote`」（只推到這個 repo 本地 git
+  config 指名的 remote，沒設的 repo 就沒有按鈕）或「不從面板推」。
 
 ## 它讀了什麼
 
@@ -71,8 +102,10 @@ claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@can
   要用的 index 鎖。
 - `~/.claude/projects/` 裡對話記錄的修改時間，用來顯示「session 進行中」。這是
   Claude Code 自己的儲存方式，改版就可能變；讀不到時那個徽章就不顯示。
+- 推送用的：remote 的預設分支、repo 本地 git config 的 `claude.worktreePushRemote`
+  （只讀，永不寫）、有沒有 pre-push hook。
 
-不會有任何資料離開你的電腦。
+除非你按下「推送」，不會有任何資料離開你的電腦。
 
 ## 限制
 
