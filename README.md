@@ -1,54 +1,124 @@
 # canopy
 
-Claude Code 的 git 線圖 mod。
+A git graph inside Claude Code. [繁體中文](README.zh-TW.md)
 
-一次開好幾個 Claude Code session 平行工作時，每個 session 都在自己的 worktree
-裡開分支，最想知道的就是「現在有幾條分支、各自走到哪、哪些還沒推」。canopy 把
-session 所在 repo 的狀態直接放進 Claude Code：該推的時候在輸入框上方提醒你，
-點一下就開出整棵樹。
+When several Claude Code sessions work in parallel, each in its own worktree, the
+question you keep asking is: how many branches are there now, where is each one, and
+what hasn't been pushed? canopy answers it without leaving Claude Code. It nudges you
+above the prompt when the session's branch has unpushed commits, and one click opens
+the whole tree.
 
-## 它做什麼
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/graph-dark.png">
+  <img alt="canopy's graph pane: branches from three worktrees, a merge, badges for unpushed commits, an active session and uncommitted changes" src="docs/graph-light.png">
+</picture>
 
-- **輸入框上方的提示**：session 所在的分支有還沒推上 remote 的 commit 時才出現，
-  例如 `↑3 claude/xxx 有 3 個 commit 不在任何 remote 上  [看線圖] [先不用]`。
-  按「先不用」先收起來，分支再多一個 commit 才會回來。
-- **線圖面板**：按「看線圖」或打 `/canopy`。上半是分支清單：未推數、落後數、
-  在哪個 worktree、那個 worktree 的 Claude session 是否還在跑、有沒有未 commit
-  的修改、是否已合併。下半是線圖：分岔與合併、分支標籤、remote 分支。
-  桌面版畫成 SVG，終端機用框線字元畫。面板右上角的 ⤢ 可以放大。
-- **自動更新**：回合結束、Claude 用 Bash 跑過 git，以及每 45 秒一次。
-- **只讀**：不 fetch、不推、不改任何東西。
+<sub>Example data from a made-up repository.</sub>
 
-## 安裝
+## What it does
 
-需求：Claude Code（function hooks 目前是 early access，要打開開關）、git。
+- **A nudge above the prompt** when the branch the session is on has commits that
+  are not on any remote: `↑3 claude/search-api has 3 commits not on any remote
+  [View graph] [Not now]`. *Not now* hides it until the branch moves again.
+- **The graph pane** (*View graph*, or `/canopy`). On top, the repository's branches
+  with their state: unpushed (`↑N`) and behind (`↓N`) counts, which worktree holds
+  them, whether that worktree's Claude session is active, uncommitted changes,
+  merged into the main worktree's branch. Below, the commit graph with forks, merges,
+  branch labels and remote branches. Expand the pane with its ⤢ button.
+- **Keeps itself current**: after every turn, after Claude runs a git command, and
+  on a timer.
+- **Read-only**: it runs `git` locally to look, and never fetches, pushes or writes.
 
-在 `~/.claude/settings.json` 的 `env` 加上：
+On a terminal the pane draws the graph with box-drawing characters:
+
+```
+●      [claude/search-api] Add search endpoint with paging
+│ ●    [claude/fix-login] Fix login redirect on expired sessions
+● │    Index titles and tags for search
+│ │ ●  [main] Bump dependencies
+○─┼─╯  Merge branch 'feature/avatars'
+│ ●    [feature/avatars] Cache user avatars
+│ ●    Avatar service skeleton
+●─╯    Release 1.4.0
+●      Tidy README
+```
+
+## Install
+
+Requirements: Claude Code **2.1.288 or later** and git. canopy is a *mod*, a plugin of
+function hooks, which Claude Code still ships as early access: turn them on by adding
+this to the `env` block of `~/.claude/settings.json`:
 
 ```json
-"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
-"CLAUDE_CODE_PLUGIN_DIRS": "~/projects/canopy/mod"
+"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
 ```
 
-之後新開的 session 都會載入。只想試一次的話，在終端機：
+Then, in Claude Code:
+
+```
+/plugin marketplace add MiskaWu/canopy
+/plugin install canopy@canopy
+```
+
+or from a shell:
 
 ```bash
-CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir ~/projects/canopy/mod
+claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@canopy
 ```
 
-移除：把上面兩行從 `env` 拿掉即可，mod 沒有在機器上留下其他東西。
+New sessions load it. Type `/canopy` to open the pane.
 
-## 開發
+## Settings
+
+Open the pane and press **Settings**; the same values are under `/config`.
+
+| Setting | Default | |
+|---|---|---|
+| Language | English | English or 繁體中文 |
+| Auto refresh | every 45 s | 0 turns the timer off; it still refreshes after each turn and after git commands |
+| Commits in the graph | 80 | *More commits* in the pane adds this many again, up to 400 |
+| Graph theme | Follow the app | or always dark, or always light |
+
+## What it reads
+
+- `git` in the session's working directory: refs, the worktree list, `git status` in
+  each worktree, and the log. Every call sets `GIT_OPTIONAL_LOCKS=0`, so a status
+  check never takes the index lock away from a session that is committing.
+- The modification times of the transcripts in `~/.claude/projects/` for the
+  "session active" badge. This is Claude Code's own storage and may change between
+  releases; when it cannot be read, the badge is left out.
+
+Nothing leaves your machine.
+
+## Limits
+
+- The graph draws the most recent commits across all branches. A branch that forked
+  long ago and hasn't moved may sit below that window: it is still in the branch
+  list, and *More commits* reaches further.
+- The plugin API is early access and changes between Claude Code releases; canopy is
+  tested against the version named above.
+
+## Development
 
 ```bash
-make test        # claude plugin validate ＋ claude plugin test
-make typecheck   # tsc（需要 mod 被 Claude Code 載入過一次，型別由引擎寫入）
+make test                       # validate the marketplace and the mod, then run its tests
+make test CLAUDE=/path/to/claude  # when the claude on PATH is older than 2.1.288
+make typecheck                  # tsc, once Claude Code has loaded the mod and written its types
 ```
 
-程式結構與不可違反的約束見 [CLAUDE.md](CLAUDE.md)。
+To work on canopy itself, load your clone instead of the installed copy: put
+`"CLAUDE_CODE_PLUGIN_DIRS": "/path/to/canopy/mod"` in the `env` block of
+`~/.claude/settings.json` (and uninstall `canopy@canopy`, so the two don't clash).
 
-## 歷史
+The repository is the marketplace (`.claude-plugin/marketplace.json`); the plugin
+itself lives in `mod/`. See [CHANGELOG.md](CHANGELOG.md) for releases.
 
-canopy 最早（2026-08）是 Go 伺服器＋React 網頁面板：掃描整個 `~/projects`、
-可以從面板推送，在 Claude Code Desktop 的瀏覽器面板裡開。2026-10-06 改成 mod，
-伺服器版隨之淘汰。最後一個還有伺服器版的 commit 是 `841bce3`，需要時從那裡取回。
+## History
+
+canopy started in August 2026 as a Go server with a React web panel that scanned a
+whole `~/projects` folder and could push from the panel. In October 2026 it became
+this mod and the server was retired; its last commit is `841bce3`.
+
+## License
+
+[MIT](LICENSE)
