@@ -3,7 +3,7 @@ import { layoutGraph, type Layout } from './lanes'
 
 // 桌面版（與其他遠端介面）的線圖：整張畫成一份 SVG。
 // 文字也放進 SVG 裡，因為介面上的列高量不到，分開畫對不齊。
-// 視覺沿用 server/mockup.html 的定稿：深色底、lane 色票、分支色塊、線不被切斷。
+// 視覺沿用伺服器版 2026-08-26 拍板的定稿：深色底、lane 色票、分支色塊、線不被切斷。
 
 export const LANE_COLORS = ['#6cb0f0', '#58c98b', '#e0a84f', '#d585d0', '#55c6c0', '#9a8cf0']
 export const SVG_LIMIT = 131072 // Svg 元素 source 的上限（字元）

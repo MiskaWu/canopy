@@ -1,6 +1,6 @@
 import type { CanopyBranch, CanopyCommit, CanopySnapshot, CanopyWorktree } from '../types'
 
-// 快照組裝：server/store.go buildSnapshot 的移植，範圍縮到 session 所在的那一個 repo
+// 快照組裝：伺服器版 store.go buildSnapshot 的移植，範圍縮到 session 所在的那一個 repo
 // （連同它所有的 worktree）。git 是唯一真相來源，這裡只讀不寫。
 
 /** 跑一條 git 指令，成功回 stdout（去掉尾端換行），失敗一律回 ''。 */

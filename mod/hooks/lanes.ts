@@ -1,4 +1,4 @@
-// lane 指派：web/src/lanes.ts 的同一套演算法（topo order、新在上；每個 lane 記著
+// lane 指派：沿用伺服器版前端的演算法（topo order、新在上；每個 lane 記著
 // 「接下來在等哪個 SHA」；headSha 預先佔住 lane 0，HEAD 所在的鏈固定在最左）。
 //
 // 多記一件事：每條邊實際走哪一道（via）。第一父邊沿子節點那道往下、到父節點才彎；
