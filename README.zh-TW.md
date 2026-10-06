@@ -9,7 +9,7 @@ Claude Code 裡的 git 線圖。[English](README.md)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/graph-dark.png">
-  <img alt="canopy 的線圖面板：三個 worktree 的分支、一次合併、未推 commit、進行中的 session 與未 commit 修改的徽章" src="docs/graph-light.png">
+  <img alt="canopy 的線圖面板：三個 worktree 的分支、一次合併、未推 commit、進行中的 session、未 commit 修改與未追蹤檔案的徽章" src="docs/graph-light.png">
 </picture>
 
 <sub>畫面為虛構 repo 的示範資料。</sub>
