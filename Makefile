@@ -48,4 +48,4 @@ clean:
 
 # Claude Code mod（mod/）：與伺服器各自獨立，不進 binary
 mod-test:
-	claude plugin validate mod && claude plugin test mod
+	claude plugin validate mod && CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test mod

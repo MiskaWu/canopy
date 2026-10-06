@@ -137,6 +137,10 @@ describe('面板', () => {
     const desk = await $.ui.mount({ ...PANE, surface: 'desktop' })
     const svg = await desk.find({ type: 'Svg' })
     expect(String(svg?.props.source)).toContain('feat · HEAD')
+    // 不開 isInteractive：桌面版會改用 iframe 畫，沒給高度就只有 150px，整張圖被縮成一小塊
+    expect(svg?.props.isInteractive).toBeUndefined()
+    // worktree 資料夾名跟分支名一樣時不重複寫
+    expect(await desk.find({ type: 'Text', text: /⌂ worktree/ })).toBeDefined()
     expect(await desk.find({ type: 'Text', text: /● 進行中/ })).toBeDefined()
     expect(await desk.find({ type: 'Text', text: /✎ 未commit/ })).toBeDefined()
     await desk.unmount()

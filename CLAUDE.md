@@ -31,6 +31,8 @@ mod/      Claude Code mod：hooks/{register.tsx(提示列/面板/指令) git.ts(
 - **面板**（Pane `canopy`，也可 `/canopy` 開）：分支清單＋線圖。桌面版整張畫成
   一份 Svg（文字也在裡面——介面的列高量不到，分開畫對不齊），上限 131072 字元，
   超過就少畫幾列；終端機沒有 Svg，用框線字元畫（textgraph.ts）。
+  **Svg 不開 `isInteractive`**：開了桌面版改用 iframe 畫，沒給高度就是 150px，
+  整張圖被縮成一小塊（2026-10-06 實測）；圖片模式則照原比例、寬不超過欄位。
 - **資料直接跑 git**，一律帶 `GIT_OPTIONAL_LOCKS=0`：status 不搶 index.lock，
   不會卡到正在 commit 的 session。觸發：回合結束、Bash 跑過 git、每 45 秒。
 - **唯讀**：不 fetch、不推。推送仍走伺服器版或使用者自己的 git。
