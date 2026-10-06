@@ -1,4 +1,4 @@
-.PHONY: all web bin install status uninstall clean
+.PHONY: all web bin install status uninstall clean mod-test
 
 # ── 腳印清單（機器上屬於 canopy 的東西，install／status／uninstall 都照這張表）──
 #   1. ./canopy            binary（build 產物，住在 repo 裡，ExecStart 直接指這裡）
@@ -45,3 +45,7 @@ uninstall:
 
 clean:
 	rm -rf canopy server/dist web/dist
+
+# Claude Code mod（mod/）：與伺服器各自獨立，不進 binary
+mod-test:
+	claude plugin validate mod && claude plugin test mod
