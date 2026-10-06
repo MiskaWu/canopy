@@ -1,4 +1,4 @@
-// canopy mod 的狀態契約：快照是 session 所在 repo 的 git 現況，
+// canopy 的狀態契約：快照是 session 所在 repo 的 git 現況，
 // 由 hooks/git.ts 跑 git 組出來（對應伺服器版 store.go 的 Snapshot）。
 
 export type CanopySession = {
@@ -55,7 +55,9 @@ declare module 'claude-code' {
       snapshot: CanopySnapshot | null
       error: string | null
       dismissed: string | null // 使用者按掉提示時的狀態簽章，簽章變了提示才回來
-      limit: number // 線圖畫幾筆 commit
+      extra: number // 「更多 commit」按過幾次；畫的筆數＝設定的 commits ×（1＋extra）
+      isSettingsOpen: boolean // 面板裡的設定區是否展開
+      settingsError: string | null // 上一次寫入設定被拒絕的原因
     }
   }
 }
