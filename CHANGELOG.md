@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 — 2026-10-06
+
+- Uncommitted changes and untracked files are told apart: `✎ 2 uncommitted` for
+  tracked files, a quieter `? 1 untracked` for new ones, with the untracked paths
+  listed under the branch. A checkout holding nothing but, say, a tool's folder no
+  longer looks like unfinished work; whether to ignore it is yours to decide in
+  `.gitignore`, which canopy respects.
+
 ## 0.3.0 — 2026-10-06
 
 - Push from the pane, **off by default**. Each branch with unpushed commits gets a

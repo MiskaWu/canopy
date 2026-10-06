@@ -92,6 +92,11 @@ docs/                      README 用的示範截圖（虛構資料）
 - **git 一律帶 `GIT_OPTIONAL_LOCKS=0`**：`git status` 不搶 index.lock，不會卡到
   正在 commit 的 session。
 - **範圍是 session 所在的 repo**（連同它所有 worktree），不掃整個目錄。
+- **未 commit 與未追蹤是兩種狀態，分開顯示**（`parseStatus`）：已追蹤檔案的變更是
+  做到一半的工作（醒目），未追蹤的可能只是該忽略的東西（淡，並列出路徑）。canopy
+  不自己略過任何路徑，要不要忽略由使用者在 `.gitignore` 決定，`git status` 會照著
+  過濾。曾經混成一個「未commit」，主 checkout 只因為有 `.claude/worktrees/` 就被標成
+  做到一半（2026-10-06）。
 - **session 活性是盡力而為**：讀的是 Claude Code 自己的 `~/.claude/projects/`，
   讀不到（改版、Windows 沒有 HOME 時退到 USERPROFILE 也不行）就不顯示，不能報錯。
 - **設定只有一份**：userConfig（settings.json 的 `pluginConfigs`）。面板設定區和

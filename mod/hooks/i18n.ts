@@ -35,7 +35,9 @@ export type Strings = {
   head: string
   worktree: string
   live: string
-  dirty: string
+  dirty: (count: number) => string
+  untracked: (count: number) => string
+  untrackedPaths: (paths: string[], more: number) => string
   noUpstream: string
   gone: string
   diverged: string
@@ -104,7 +106,9 @@ const en: Strings = {
   head: 'HEAD',
   worktree: 'worktree',
   live: '● active',
-  dirty: '✎ uncommitted',
+  dirty: count => `✎ ${count} uncommitted`,
+  untracked: count => `? ${count} untracked`,
+  untrackedPaths: (paths, more) => `untracked: ${paths.join(', ')}${more > 0 ? ` and ${more} more` : ''} (add to .gitignore to stop showing)`,
   noUpstream: 'no upstream',
   gone: 'upstream gone',
   diverged: '⚠ diverged',
@@ -172,7 +176,9 @@ const zhTW: Strings = {
   head: 'HEAD',
   worktree: 'worktree',
   live: '● 進行中',
-  dirty: '✎ 未commit',
+  dirty: count => `✎ ${count} 未commit`,
+  untracked: count => `? ${count} 未追蹤`,
+  untrackedPaths: (paths, more) => `未追蹤：${paths.join('、')}${more > 0 ? ` 等 ${paths.length + more} 項` : ''}（不想再看到就加進 .gitignore）`,
   noUpstream: '無upstream',
   gone: 'upstream 已消失',
   diverged: '⚠ 分岔',

@@ -22,9 +22,12 @@ the whole tree.
   [View graph] [Not now]`. *Not now* hides it until the branch moves again.
 - **The graph pane** (*View graph*, or `/canopy`). On top, the repository's branches
   with their state: unpushed (`↑N`) and behind (`↓N`) counts, which worktree holds
-  them, whether that worktree's Claude session is active, uncommitted changes,
-  merged into the main worktree's branch. Below, the commit graph with forks, merges,
-  branch labels and remote branches. Expand the pane with its ⤢ button.
+  them, whether that worktree's Claude session is active, merged into the main
+  worktree's branch, and — told apart — uncommitted changes to tracked files
+  (`✎ 2 uncommitted`) and untracked files (`? 1 untracked`, listed by path). canopy
+  hides nothing on its own: untracked paths you never want to see belong in
+  `.gitignore`, which it respects. Below, the commit graph with forks, merges, branch
+  labels and remote branches. Expand the pane with its ⤢ button.
 - **Keeps itself current**: after every turn, after Claude runs a git command, and
   on a timer.
 - **Read-only by default**: it runs `git` locally to look, and never fetches or

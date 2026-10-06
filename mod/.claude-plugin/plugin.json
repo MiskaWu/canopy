@@ -1,6 +1,6 @@
 {
   "name": "canopy",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Git graph for Claude Code: a nudge above the prompt when your branch has unpushed commits, and a pane with every branch and worktree of the repo.",
   "author": { "name": "MiskaWu", "url": "https://github.com/MiskaWu" },
   "homepage": "https://github.com/MiskaWu/canopy",

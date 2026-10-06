@@ -30,7 +30,9 @@ export function branchBadges(b: CanopyBranch, snap: CanopySnapshot, t: Strings, 
   if (wt?.session) {
     out.push(wt.session.isLive ? { text: t.live, kind: 'ok' } : { text: `○ ${ago(wt.session.lastActive, nowMs)}`, kind: 'mute', isMono: true })
   }
-  if (wt?.isDirty) out.push({ text: t.dirty, kind: 'dirty' })
+  // 未 commit 與未追蹤分開：前者是做到一半的工作（醒目），後者可能只是該被 .gitignore 的東西（淡）
+  if (wt !== null && wt.changed > 0) out.push({ text: t.dirty(wt.changed), kind: 'dirty' })
+  if (wt !== null && wt.untracked.length > 0) out.push({ text: t.untracked(wt.untracked.length), kind: 'mute' })
   if (b.noUpstream && !snap.noRemote) out.push({ text: t.noUpstream, kind: 'info' })
   if (b.gone) out.push({ text: t.gone, kind: 'mute' })
   if (b.ahead > 0 && b.behind > 0) out.push({ text: t.diverged, kind: 'diverged' })

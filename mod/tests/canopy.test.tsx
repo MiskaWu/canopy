@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { parseBranchList, readConfig, type Config } from '../hooks/config'
+import { parseStatus } from '../hooks/git'
 import { layoutGraph } from '../hooks/lanes'
 import { strings } from '../hooks/i18n'
 import { planPush } from '../hooks/push'
@@ -61,7 +62,8 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
   if (a === 'rev-parse HEAD') return cwd === MAIN ? 'm1' : repo.tip
   if (a === 'remote') return 'origin'
   if (a === 'worktree list --porcelain') return `worktree ${MAIN}\nHEAD m1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD ${repo.tip}\nbranch refs/heads/feat\n`
-  if (a === 'status --porcelain') return cwd === WT ? ' M hooks/register.tsx' : ''
+  // worktree 有一個改到一半的檔案；主 checkout 只有一個沒追蹤的 .claude/（放 worktree 的地方）
+  if (a === 'status --porcelain') return cwd === WT ? ' M hooks/register.tsx' : '?? .claude/'
   if (a === 'symbolic-ref --quiet --short refs/remotes/origin/HEAD') return 'origin/main'
   if (a.startsWith('config --local --get ')) return repo.gitConfig[argv.at(-1) ?? ''] ?? null
   if (a === 'rev-parse --path-format=absolute --git-path hooks/pre-push') return HOOK
@@ -226,7 +228,7 @@ describe('面板', () => {
     // worktree 資料夾名跟分支名一樣時不重複寫
     expect(await desk.find({ type: 'Text', text: /⌂ worktree/ })).toBeDefined()
     expect(await desk.find({ type: 'Text', text: /● 進行中/ })).toBeDefined()
-    expect(await desk.find({ type: 'Text', text: /✎ 未commit/ })).toBeDefined()
+    expect(await desk.find({ type: 'Text', text: /✎ 1 未commit/ })).toBeDefined()
     await desk.unmount()
 
     const term = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -312,6 +314,29 @@ describe('面板裡的設定', () => {
       respectHooks: true,
     })
     expect(readConfig({ refreshSeconds: 0 }).refreshSeconds).toBe(0)
+  })
+})
+
+describe('未 commit 與未追蹤', () => {
+  test('分開顯示：主 checkout 只有未追蹤的 .claude/，不算未 commit，並列出路徑與 .gitignore 提示', async ($, on) => {
+    world(on)
+    await $.command.run(RUN)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...PANE, surface })
+      const rows = (await ui.findAll({ type: 'Text' })).map(el => el.text)
+      const mainRow = rows.find(text => /^\s*main\b/.test(text)) ?? ''
+      expect(mainRow).toContain('? 1 untracked')
+      expect(mainRow).not.toContain('uncommitted')
+      expect(rows.find(text => text.includes('feat') && text.includes('✎ 1 uncommitted'))).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'untracked: .claude/ (add to .gitignore to stop showing)' })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+
+  test('git status 的每一種行：未追蹤、已暫存、修改、改名、刪除；被忽略的不算', () => {
+    const out = ['?? .claude/', '?? notes.txt', 'M  staged.ts', ' M edited.ts', 'R  old.ts -> new.ts', ' D gone.ts', '!! build/'].join('\n')
+    expect(parseStatus(out)).toEqual({ changed: 4, untracked: ['.claude/', 'notes.txt'] })
+    expect(parseStatus('')).toEqual({ changed: 0, untracked: [] })
   })
 })
 
@@ -461,7 +486,7 @@ describe('推送政策（規則表）', () => {
         gone: false,
         merged: false,
         isCurrent: true,
-        worktree: { path: '/r/wt', name: 'feat', isMain: false, isDirty: false, session: null },
+        worktree: { path: '/r/wt', name: 'feat', isMain: false, changed: 0, untracked: [], session: null },
       },
     ],
     commits: [],
