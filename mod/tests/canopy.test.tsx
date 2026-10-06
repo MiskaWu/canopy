@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { readConfig } from '../hooks/config'
 import { layoutGraph } from '../hooks/lanes'
+import { strings } from '../hooks/i18n'
 import { renderSvg, SVG_LIMIT } from '../hooks/svg'
 import { merge, textGraph } from '../hooks/textgraph'
 import type { CanopySnapshot } from '../types'
@@ -26,8 +28,8 @@ const COMMITS = [
   ['b1', 'b0', 'me', 'base'],
 ]
 
-/** 假 repo 的可變部分：feat 的 tip 與未推數，測試中途可以推進。 */
-type Repo = { tip: string; ahead: number }
+/** 假 repo 的可變部分：feat 的 tip 與未推數，測試中途可以推進；logLimits 記下每次 git log 要幾筆。 */
+type Repo = { tip: string; ahead: number; logLimits: number[] }
 
 function log(repo: Repo): string {
   const rows = repo.tip === 'f2' ? COMMITS : [[repo.tip, 'f2', 'claude', 'feat: 又一步'], ...COMMITS]
@@ -46,14 +48,20 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
   if (a.startsWith('for-each-ref --merged')) return 'main'
   if (a.startsWith('for-each-ref refs/heads')) return [`feat${US}${repo.tip}${US}${US}`, `main${US}m1${US}origin/main${US}`].join('\n')
   if (a.startsWith('rev-list --count refs/heads/feat')) return String(repo.ahead)
-  if (a.startsWith('log ')) return log(repo)
+  if (a.startsWith('log ')) {
+    repo.logLimits.push(Number(argv[argv.indexOf('-n') + 1]))
+    return log(repo)
+  }
   return null
 }
 
-/** 把 session 擺進假 repo：git、工作目錄、HOME、session 記錄、時鐘、開面板。 */
-function world(on: On, opts: { ahead?: number; cwd?: string; isNotRepo?: boolean } = {}) {
+type Saved = { key: string; value: unknown }
+
+/** 把 session 擺進假 repo：git、工作目錄、HOME、session 記錄、時鐘、開面板、/config。 */
+function world(on: On, opts: { ahead?: number; cwd?: string; isNotRepo?: boolean; denySave?: string } = {}) {
   const opened: string[] = []
-  const repo: Repo = { tip: 'f2', ahead: opts.ahead ?? 2 }
+  const saved: Saved[] = []
+  const repo: Repo = { tip: 'f2', ahead: opts.ahead ?? 2, logLimits: [] }
   mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/u' })
   on('session.cwd', () => ({ value: opts.cwd ?? WT }))
@@ -73,7 +81,23 @@ function world(on: On, opts: { ahead?: number; cwd?: string; isNotRepo?: boolean
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  return { opened, repo }
+  // /config：插件的列以 `<plugin>@inline.<field>` 命名，確認寫回時用的是列表給的 key
+  on('config.list', () => ({
+    value: ['language', 'refreshSeconds', 'commits', 'graphTheme'].map(field => ({
+      key: `canopy@inline.${field}`,
+      label: field,
+      kind: 'text' as const,
+      value: '',
+      provider: { plugin: 'canopy', tier: 'user' as const },
+      isLocked: false,
+    })),
+  }))
+  on('config.set', ($, e) => {
+    if (opts.denySave !== undefined) return { deny: opts.denySave }
+    saved.push({ key: e.key, value: e.value })
+    return { value: e.value }
+  })
+  return { opened, repo, saved }
 }
 
 const BAND = {
@@ -89,19 +113,30 @@ const PANE = {
 }
 const SURFACES = ['terminal', 'desktop'] as const
 const RUN = { command: 'canopy', args: '', origin: { kind: 'composer' as const }, presentation: { isFullscreen: true, columns: 160 } }
+const ZH = { options: { language: 'zh-TW' } }
 
 describe('提示列', () => {
-  test('有未推 commit 時出現，按「看線圖」開面板', async ($, on) => {
+  test('預設英文：有未推 commit 時出現，按「View graph」開面板', async ($, on) => {
     const { opened } = world(on)
     await $.command.run(RUN) // 指令會開面板並抓一次快照
     expect(opened).toEqual(['canopy'])
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ ...BAND, surface })
-      expect((await ui.find({ type: 'Text', text: /feat 有 2 個 commit 不在任何 remote 上/ }))?.text).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /feat has 2 commits not on any remote/ })).toBeDefined()
+      expect((await ui.find({ key: 'open' }))?.props.label).toBe('View graph')
       await ui.press({ key: 'open' })
       await ui.unmount()
     }
     expect(opened).toEqual(['canopy', 'canopy', 'canopy'])
+  })
+
+  test('繁中：同一列換成中文', ZH, async ($, on) => {
+    world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /feat 有 2 個 commit 不在任何 remote 上/ })).toBeDefined()
+    expect((await ui.find({ key: 'open' }))?.props.label).toBe('看線圖')
+    await ui.unmount()
   })
 
   test('按掉之後消失，分支再動才回來', async ($, on) => {
@@ -116,7 +151,7 @@ describe('提示列', () => {
     repo.tip = 'f3'
     repo.ahead = 3
     await $.command.run(RUN)
-    expect(await ui.find({ type: 'Text', text: /feat 有 3 個 commit/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /feat has 3 commits/ })).toBeDefined()
     await ui.unmount()
   })
 
@@ -130,7 +165,7 @@ describe('提示列', () => {
 })
 
 describe('面板', () => {
-  test('桌面版畫 Svg，終端機畫文字線圖', async ($, on) => {
+  test('桌面版畫 Svg，終端機畫文字線圖', ZH, async ($, on) => {
     world(on)
     await $.command.run(RUN)
 
@@ -155,8 +190,73 @@ describe('面板', () => {
     world(on, { cwd: '/tmp/nowhere', isNotRepo: true })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    expect(await ui.find({ type: 'Text', text: /不在 git repo 裡/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /not inside a git repository/ })).toBeDefined()
     await ui.unmount()
+  })
+
+  test('「更多 commit」每按一次多抓一份設定的筆數', { options: { commits: 40 } }, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run(RUN)
+    expect(repo.logLimits.at(-1)).toBe(40)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'more' })
+    expect(repo.logLimits.at(-1)).toBe(80)
+    await ui.unmount()
+  })
+})
+
+describe('面板裡的設定', () => {
+  test('桌面與終端機：設定區用下拉選，選了就寫回 /config 列的 key', async ($, on) => {
+    const { saved } = world(on)
+    await $.command.run(RUN)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.find({ key: 'set-language' })).toBeUndefined()
+      await ui.press({ key: 'settings' })
+      expect((await ui.find({ key: 'set-language' }))?.type).toBe('Select')
+      expect((await ui.find({ key: 'set-theme' }))?.type).toBe('Select')
+      await ui.press({ key: 'settings' }) // 收起來，下一個介面從頭開
+      await ui.unmount()
+    }
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'settings' })
+    await ui.select({ key: 'set-language', value: 'zh-TW' })
+    await ui.select({ key: 'set-refresh', value: '120' })
+    expect(saved).toEqual([
+      { key: 'canopy@inline.language', value: 'zh-TW' },
+      { key: 'canopy@inline.refreshSeconds', value: 120 },
+    ])
+    await ui.unmount()
+  })
+
+  test('手機沒有下拉選：用按鈕輪流切換', async ($, on) => {
+    const { saved } = world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+    await ui.press({ key: 'settings' })
+    await ui.press({ key: 'set-theme' })
+    expect(saved).toEqual([{ key: 'canopy@inline.graphTheme', value: 'dark' }])
+    await ui.unmount()
+  })
+
+  test('寫不進去就把原因顯示在設定區', async ($, on) => {
+    world(on, { denySave: 'managed by policy' })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'settings' })
+    await ui.select({ key: 'set-commits', value: '160' })
+    expect(await ui.find({ type: 'Text', text: /Could not save: managed by policy/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('設定值有界限：輪詢至少 10 秒、0 是關閉、commit 數夾在 10 到 400、未知語言退回英文', () => {
+    expect(readConfig({ refreshSeconds: 3, commits: 9999, language: 'fr', graphTheme: 'neon' })).toEqual({
+      language: 'en',
+      refreshSeconds: 10,
+      commits: 400,
+      graphTheme: 'auto',
+    })
+    expect(readConfig({ refreshSeconds: 0 }).refreshSeconds).toBe(0)
   })
 })
 
@@ -189,17 +289,19 @@ describe('線圖排版', () => {
     expect(merge('─', '╯')).toBe('┴')
     expect(merge(' ', '│')).toBe('│')
   })
+})
 
-  test('commit 再多，Svg 都不超過上限', () => {
-    const many = Array.from({ length: 400 }, (_, i) => ({
+describe('Svg', () => {
+  const snap = (count: number): CanopySnapshot => {
+    const many = Array.from({ length: count }, (_, i) => ({
       sha: `c${i}`.padEnd(40, '0'),
-      parents: i < 399 ? [`c${i + 1}`.padEnd(40, '0')] : [],
+      parents: i < count - 1 ? [`c${i + 1}`.padEnd(40, '0')] : [],
       time: NOW / 1000 - i * 60,
       refs: [],
       author: 'someone',
       subject: `一個頗長的提交訊息，用來把每一列撐到接近真實的長度 #${i}`,
     }))
-    const snap: CanopySnapshot = {
+    return {
       repoName: 'r',
       repoPath: '/r',
       cwdBranch: 'main',
@@ -211,8 +313,29 @@ describe('線圖排版', () => {
       commits: many,
       builtAt: NOW,
     }
-    const { source, rows } = renderSvg(snap, 1000, NOW)
+  }
+  const opts = { width: 1000, nowMs: NOW, t: strings('en') }
+
+  test('commit 再多都不超過上限', () => {
+    const { source, rows } = renderSvg(snap(400), { ...opts, theme: 'auto' })
     expect(source.length).toBeLessThanOrEqual(SVG_LIMIT)
     expect(rows).toBeGreaterThan(100)
+  })
+
+  test('根元素只給 viewBox：圖片撐滿欄寬，不靠估的寬度', () => {
+    const root = /^<svg[^>]*>/.exec(renderSvg(snap(3), { ...opts, theme: 'auto' }).source)?.[0] ?? ''
+    expect(root).toContain('viewBox="0 0 1000 ')
+    expect(root).not.toMatch(/\s(width|height)=/)
+  })
+
+  test('主題：auto 跟著 prefers-color-scheme，指定深淺色就只有那一套', () => {
+    const auto = renderSvg(snap(3), { ...opts, theme: 'auto' }).source
+    const dark = renderSvg(snap(3), { ...opts, theme: 'dark' }).source
+    const light = renderSvg(snap(3), { ...opts, theme: 'light' }).source
+    expect(auto).toContain('@media (prefers-color-scheme: light)')
+    expect(dark).not.toContain('prefers-color-scheme')
+    expect(dark).toContain('--bg:#151a20')
+    expect(light).toContain('--bg:#f6f8fa')
+    expect(light).not.toContain('--bg:#151a20')
   })
 })

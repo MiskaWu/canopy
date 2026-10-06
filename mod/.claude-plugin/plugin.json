@@ -1,6 +1,39 @@
 {
   "name": "canopy",
-  "version": "0.1.0",
-  "description": "git 線圖：有未推 commit 時在輸入框上方提示，點開面板看整棵樹",
-  "types": "./types/index.d.ts"
+  "version": "0.2.0",
+  "description": "Git graph for Claude Code: a nudge above the prompt when your branch has unpushed commits, and a pane with every branch and worktree of the repo.",
+  "author": { "name": "MiskaWu", "url": "https://github.com/MiskaWu" },
+  "homepage": "https://github.com/MiskaWu/canopy",
+  "repository": "https://github.com/MiskaWu/canopy",
+  "license": "MIT",
+  "keywords": ["git", "graph", "worktree", "branches", "mod"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the prompt nudge and the graph pane.",
+      "default": "en",
+      "options": ["en", "zh-TW"]
+    },
+    "refreshSeconds": {
+      "type": "number",
+      "title": "Auto refresh (seconds)",
+      "description": "How often the graph re-reads git in the background; 0 turns the timer off (it still refreshes after each turn and after git commands).",
+      "default": 45
+    },
+    "commits": {
+      "type": "number",
+      "title": "Commits in the graph",
+      "description": "How many recent commits the graph draws at first; the pane's More button adds this many again.",
+      "default": 80
+    },
+    "graphTheme": {
+      "type": "string",
+      "title": "Graph theme",
+      "description": "auto follows the app's light or dark appearance.",
+      "default": "auto",
+      "options": ["auto", "dark", "light"]
+    }
+  }
 }

@@ -1,0 +1,150 @@
+// 介面文字的對照表：每種語言一份，鍵完全相同（型別保證）。
+// 新增語言＝在 LANGUAGES 加一筆、寫一份 Strings，再把代碼加進 plugin.json 的 options。
+
+export type Language = 'en' | 'zh-TW'
+
+export const LANGUAGES: readonly { code: Language; name: string }[] = [
+  { code: 'en', name: 'English' },
+  { code: 'zh-TW', name: '繁體中文' },
+]
+
+export type Strings = {
+  // 提示列
+  bandRest: (ahead: number, upstream: string | null) => string
+  bandOthers: (count: number) => string
+  openGraph: string
+  notNow: string
+  // 指令
+  commandDescription: string
+  commandOpened: string
+  // 面板
+  paneTitle: (repo: string | null) => string
+  refresh: string
+  more: (count: number) => string
+  close: string
+  settings: string
+  settingsDone: string
+  notRepo: string
+  loading: string
+  failed: (message: string) => string
+  updated: (ago: string) => string
+  restBranches: (count: number) => string
+  truncated: (rows: number) => string
+  graphAlt: (repo: string, rows: number) => string
+  // 徽章（面板清單與線圖共用）
+  head: string
+  worktree: string
+  live: string
+  dirty: string
+  noUpstream: string
+  gone: string
+  diverged: string
+  merged: string
+  // 設定
+  language: string
+  refreshEvery: string
+  refreshOff: string
+  seconds: (n: number) => string
+  commits: string
+  graphTheme: string
+  themeAuto: string
+  themeDark: string
+  themeLight: string
+  settingsHint: string
+  saveFailed: (reason: string) => string
+}
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
+
+const en: Strings = {
+  bandRest: (ahead, upstream) =>
+    ` has ${ahead} ${plural(ahead, 'commit', 'commits')} ${upstream === null ? 'not on any remote' : `not pushed to ${upstream}`}`,
+  bandOthers: count => ` (${count} other ${plural(count, 'branch', 'branches')} unpushed too)`,
+  openGraph: 'View graph',
+  notNow: 'Not now',
+  commandDescription: 'Open the git graph pane (every branch and worktree of this repo)',
+  commandOpened: 'Opened the canopy git graph.',
+  paneTitle: repo => (repo === null ? 'Git graph' : `Git graph · ${repo}`),
+  refresh: 'Refresh',
+  more: count => `More commits (${count} now)`,
+  close: 'Close',
+  settings: 'Settings',
+  settingsDone: 'Done',
+  notRepo: "This session's working directory is not inside a git repository.",
+  loading: 'Loading…',
+  failed: message => `Could not read the repository: ${message}`,
+  updated: ago => `updated ${ago} ago`,
+  restBranches: count => `…${count} more ${plural(count, 'branch', 'branches')} not listed (merged or idle)`,
+  truncated: rows => `The graph stops at commit ${rows} (image size limit).`,
+  graphAlt: (repo, rows) => `Git graph of the last ${rows} commits in ${repo}`,
+  head: 'HEAD',
+  worktree: 'worktree',
+  live: '● active',
+  dirty: '✎ uncommitted',
+  noUpstream: 'no upstream',
+  gone: 'upstream gone',
+  diverged: '⚠ diverged',
+  merged: '✓ merged',
+  language: 'Language',
+  refreshEvery: 'Auto refresh',
+  refreshOff: 'Off',
+  seconds: n => `every ${n}s`,
+  commits: 'Commits in the graph',
+  graphTheme: 'Graph theme',
+  themeAuto: 'Follow the app',
+  themeDark: 'Dark',
+  themeLight: 'Light',
+  settingsHint: 'The same settings are under /config.',
+  saveFailed: reason => `Could not save: ${reason}`,
+}
+
+const zhTW: Strings = {
+  bandRest: (ahead, upstream) => ` 有 ${ahead} 個 commit ${upstream === null ? '不在任何 remote 上' : `還沒推到 ${upstream}`}`,
+  bandOthers: count => `（另有 ${count} 條分支也有未推）`,
+  openGraph: '看線圖',
+  notNow: '先不用',
+  commandDescription: '開啟 git 線圖面板（session 所在 repo 的所有分支與 worktree）',
+  commandOpened: '已開啟 canopy 線圖面板。',
+  paneTitle: repo => (repo === null ? 'git 線圖' : `git 線圖 · ${repo}`),
+  refresh: '重新整理',
+  more: count => `更多 commit（目前 ${count}）`,
+  close: '關閉',
+  settings: '設定',
+  settingsDone: '完成',
+  notRepo: '這個 session 的工作目錄不在 git repo 裡。',
+  loading: '讀取中…',
+  failed: message => `讀取失敗：${message}`,
+  updated: ago => `${ago} 前更新`,
+  restBranches: count => `…另有 ${count} 條分支沒列出（已合併、沒在動）`,
+  truncated: rows => `線圖只畫到第 ${rows} 筆（圖的大小有上限）。`,
+  graphAlt: (repo, rows) => `${repo} 最近 ${rows} 筆 commit 的線圖`,
+  head: 'HEAD',
+  worktree: 'worktree',
+  live: '● 進行中',
+  dirty: '✎ 未commit',
+  noUpstream: '無upstream',
+  gone: 'upstream 已消失',
+  diverged: '⚠ 分岔',
+  merged: '✓ 已合併',
+  language: '語言',
+  refreshEvery: '自動更新',
+  refreshOff: '關閉',
+  seconds: n => `每 ${n} 秒`,
+  commits: '線圖 commit 數',
+  graphTheme: '線圖主題',
+  themeAuto: '跟隨介面',
+  themeDark: '深色',
+  themeLight: '淺色',
+  settingsHint: '同一組設定也在 /config 裡。',
+  saveFailed: reason => `無法儲存：${reason}`,
+}
+
+const TABLE: Record<Language, Strings> = { en, 'zh-TW': zhTW }
+
+export function isLanguage(value: unknown): value is Language {
+  return LANGUAGES.some(l => l.code === value)
+}
+
+export function strings(language: Language): Strings {
+  return TABLE[language]
+}
