@@ -52,6 +52,28 @@ export type Strings = {
   themeLight: string
   settingsHint: string
   saveFailed: (reason: string) => string
+  // 推送
+  pushButton: (ahead: number, branch: string) => string
+  pushTitle: (branch: string, remote: string) => string
+  moreToPush: (count: number) => string
+  protectedWarning: (branch: string) => string
+  pushConfirm: string
+  pushArm: (branch: string) => string
+  pushConfirmProtected: (branch: string) => string
+  cancel: string
+  pushing: (branch: string) => string
+  pushed: (branch: string, remote: string) => string
+  pushFailed: (branch: string) => string
+  blocked: Record<'hook' | 'worktree-block' | 'worktree-no-key', string>
+  pushSetting: string
+  on: string
+  off: string
+  worktreePushSetting: string
+  worktreePushOptions: Record<'allow' | 'allowKey' | 'block', string>
+  protectedSetting: string
+  protectedHint: string
+  respectHooksSetting: string
+  respectHooksOptions: { respect: string; skip: string }
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -96,6 +118,31 @@ const en: Strings = {
   themeLight: 'Light',
   settingsHint: 'The same settings are under /config.',
   saveFailed: reason => `Could not save: ${reason}`,
+  pushButton: (ahead, branch) => `↑${ahead} Push ${branch}`,
+  pushTitle: (branch, remote) => `Push ${branch} to ${remote}`,
+  moreToPush: count => `…and ${count} more`,
+  protectedWarning: branch => `${branch} is a protected branch.`,
+  pushConfirm: 'Push',
+  pushArm: branch => `Push to ${branch}…`,
+  pushConfirmProtected: branch => `Yes, push to ${branch}`,
+  cancel: 'Cancel',
+  pushing: branch => `Pushing ${branch}…`,
+  pushed: (branch, remote) => `Pushed ${branch} to ${remote}.`,
+  pushFailed: branch => `Pushing ${branch} failed:`,
+  blocked: {
+    hook: 'this repository has a pre-push hook, which does not run when canopy pushes. Push from a terminal.',
+    'worktree-block': 'worktree branches are not pushed from the pane (Settings).',
+    'worktree-no-key': "worktree branch, and this repository's git config has no claude.worktreePushRemote naming a remote.",
+  },
+  pushSetting: 'Push from the pane',
+  on: 'On',
+  off: 'Off',
+  worktreePushSetting: 'Worktree branches',
+  worktreePushOptions: { allow: 'Push like any branch', allowKey: 'Only to claude.worktreePushRemote', block: 'Never from the pane' },
+  protectedSetting: 'Protected branches',
+  protectedHint: "Comma-separated; pushing one asks twice. The remote's default branch is always protected.",
+  respectHooksSetting: 'Repositories with a pre-push hook',
+  respectHooksOptions: { respect: 'Push from a terminal instead', skip: 'Push anyway, skipping the hook' },
 }
 
 const zhTW: Strings = {
@@ -137,6 +184,31 @@ const zhTW: Strings = {
   themeLight: '淺色',
   settingsHint: '同一組設定也在 /config 裡。',
   saveFailed: reason => `無法儲存：${reason}`,
+  pushButton: (ahead, branch) => `↑${ahead} 推送 ${branch}`,
+  pushTitle: (branch, remote) => `推送 ${branch} 到 ${remote}`,
+  moreToPush: count => `…還有 ${count} 筆`,
+  protectedWarning: branch => `${branch} 是受保護的分支。`,
+  pushConfirm: '推送',
+  pushArm: branch => `推送到 ${branch}…`,
+  pushConfirmProtected: branch => `確定推送到 ${branch}`,
+  cancel: '取消',
+  pushing: branch => `正在推送 ${branch}…`,
+  pushed: (branch, remote) => `已推送 ${branch} 到 ${remote}。`,
+  pushFailed: branch => `推送 ${branch} 失敗：`,
+  blocked: {
+    hook: '這個 repo 有 pre-push hook，canopy 推送時不會執行它，請改用終端機推。',
+    'worktree-block': '設定為不從面板推 worktree 分支。',
+    'worktree-no-key': 'worktree 分支，而這個 repo 的 git config 沒有 claude.worktreePushRemote 指名的 remote。',
+  },
+  pushSetting: '從面板推送',
+  on: '開',
+  off: '關',
+  worktreePushSetting: 'worktree 分支',
+  worktreePushOptions: { allow: '和一般分支一樣推', allowKey: '只推到 claude.worktreePushRemote', block: '不從面板推' },
+  protectedSetting: '受保護分支',
+  protectedHint: '逗號分隔；推這些要確認兩次。remote 的預設分支一律受保護。',
+  respectHooksSetting: '有 pre-push hook 的 repo',
+  respectHooksOptions: { respect: '改用終端機推', skip: '照推（不執行 hook）' },
 }
 
 const TABLE: Record<Language, Strings> = { en, 'zh-TW': zhTW }

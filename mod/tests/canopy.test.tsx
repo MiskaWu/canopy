@@ -1,9 +1,10 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { readConfig } from '../hooks/config'
+import { parseBranchList, readConfig, type Config } from '../hooks/config'
 import { layoutGraph } from '../hooks/lanes'
 import { strings } from '../hooks/i18n'
+import { planPush } from '../hooks/push'
 import { renderSvg, SVG_LIMIT } from '../hooks/svg'
 import { merge, textGraph } from '../hooks/textgraph'
 import type { CanopySnapshot } from '../types'
@@ -28,8 +29,24 @@ const COMMITS = [
   ['b1', 'b0', 'me', 'base'],
 ]
 
-/** 假 repo 的可變部分：feat 的 tip 與未推數，測試中途可以推進；logLimits 記下每次 git log 要幾筆。 */
-type Repo = { tip: string; ahead: number; logLimits: number[] }
+/**
+ * 假 repo 的可變部分，測試中途可以推進：feat 的 tip 與未推數、feat 有沒有 upstream、main 領先幾筆、
+ * claude.worktreePushRemote、有沒有 pre-push hook、推送要不要失敗。
+ * logLimits 記下每次 git log 要幾筆，pushes 記下每次 git push 的參數與環境變數。
+ */
+type Repo = {
+  tip: string
+  ahead: number
+  featUpstream: boolean
+  mainAhead: number
+  pushKey: string | null
+  hasHook: boolean
+  pushFails: string | null
+  logLimits: number[]
+  pushes: { args: string[]; env: Record<string, string> | undefined }[]
+}
+
+const HOOK = '/r/.git/hooks/pre-push'
 
 function log(repo: Repo): string {
   const rows = repo.tip === 'f2' ? COMMITS : [[repo.tip, 'f2', 'claude', 'feat: 又一步'], ...COMMITS]
@@ -45,9 +62,22 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
   if (a === 'remote') return 'origin'
   if (a === 'worktree list --porcelain') return `worktree ${MAIN}\nHEAD m1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD ${repo.tip}\nbranch refs/heads/feat\n`
   if (a === 'status --porcelain') return cwd === WT ? ' M hooks/register.tsx' : ''
+  if (a === 'symbolic-ref --quiet --short refs/remotes/origin/HEAD') return 'origin/main'
+  if (a === 'config --local --get claude.worktreePushRemote') return repo.pushKey
+  if (a === 'rev-parse --path-format=absolute --git-path hooks/pre-push') return HOOK
   if (a.startsWith('for-each-ref --merged')) return 'main'
-  if (a.startsWith('for-each-ref refs/heads')) return [`feat${US}${repo.tip}${US}${US}`, `main${US}m1${US}origin/main${US}`].join('\n')
-  if (a.startsWith('rev-list --count refs/heads/feat')) return String(repo.ahead)
+  if (a.startsWith('for-each-ref refs/heads')) {
+    const feat = repo.featUpstream ? `feat${US}${repo.tip}${US}origin/feat${US}[ahead ${repo.ahead}]` : `feat${US}${repo.tip}${US}${US}`
+    const main = `main${US}m1${US}origin/main${US}${repo.mainAhead > 0 ? `[ahead ${repo.mainAhead}]` : ''}`
+    return [feat, main].join('\n')
+  }
+  if (a.startsWith('rev-list --count refs/heads/feat') || a === 'rev-list --count origin/feat..refs/heads/feat') return String(repo.ahead)
+  if (a === 'rev-list --count origin/main..refs/heads/main') return String(repo.mainAhead)
+  // 推送前的預覽：要推哪些 commit
+  if (a.startsWith(`log --format=%h${US}%s -n 10`)) {
+    return a.includes('refs/heads/main') ? `m9${US}main: 本地一筆` : [`f2${US}feat: 第二步`, `f1${US}feat: 第一步`].join('\n')
+  }
+  if (a.startsWith('push ')) return 'pushed'
   if (a.startsWith('log ')) {
     repo.logLimits.push(Number(argv[argv.indexOf('-n') + 1]))
     return log(repo)
@@ -58,20 +88,39 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
 type Saved = { key: string; value: unknown }
 
 /** 把 session 擺進假 repo：git、工作目錄、HOME、session 記錄、時鐘、開面板、/config。 */
-function world(on: On, opts: { ahead?: number; cwd?: string; isNotRepo?: boolean; denySave?: string } = {}) {
+type WorldOptions = { ahead?: number; cwd?: string; isNotRepo?: boolean; denySave?: string } & Partial<Pick<Repo, 'mainAhead' | 'pushKey' | 'hasHook' | 'pushFails'>>
+
+function world(on: On, opts: WorldOptions = {}) {
   const opened: string[] = []
   const saved: Saved[] = []
-  const repo: Repo = { tip: 'f2', ahead: opts.ahead ?? 2, logLimits: [] }
+  const repo: Repo = {
+    tip: 'f2',
+    ahead: opts.ahead ?? 2,
+    featUpstream: false,
+    mainAhead: opts.mainAhead ?? 0,
+    pushKey: opts.pushKey ?? null,
+    hasHook: opts.hasHook ?? false,
+    pushFails: opts.pushFails ?? null,
+    logLimits: [],
+    pushes: [],
+  }
   mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/u' })
   on('session.cwd', () => ({ value: opts.cwd ?? WT }))
   on('process.run', ($, e) => {
+    if (e.argv[1] === 'push') {
+      repo.pushes.push({ args: e.argv.slice(1), env: e.init?.env })
+      if (repo.pushFails !== null) {
+        return { value: { exitCode: 1, stdout: '', stderr: repo.pushFails, isStdoutTruncated: false, isStderrTruncated: false } }
+      }
+    }
     const out = opts.isNotRepo ? null : fakeGit(e.argv, e.init?.cwd, repo)
     return { value: { exitCode: out === null ? 128 : 0, stdout: out ?? '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.list', ($, e) => ({
     value: e.path?.endsWith('-r--claude-worktrees-feat') ? [{ name: 's.jsonl', kind: 'file' as const, size: 1, mtimeMs: NOW - 60_000, isLink: false }] : [],
   }))
+  on('fs.exists', ($, e) => ({ value: repo.hasHook && e.path === HOOK }))
   on('ui.open', ($, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true as const } }
@@ -83,7 +132,7 @@ function world(on: On, opts: { ahead?: number; cwd?: string; isNotRepo?: boolean
   })
   // /config：插件的列以 `<plugin>@inline.<field>` 命名，確認寫回時用的是列表給的 key
   on('config.list', () => ({
-    value: ['language', 'refreshSeconds', 'commits', 'graphTheme'].map(field => ({
+    value: ['language', 'refreshSeconds', 'commits', 'graphTheme', 'push', 'worktreePush', 'protectedBranches', 'respectHooks'].map(field => ({
       key: `canopy@inline.${field}`,
       label: field,
       kind: 'text' as const,
@@ -250,13 +299,191 @@ describe('面板裡的設定', () => {
   })
 
   test('設定值有界限：輪詢至少 10 秒、0 是關閉、commit 數夾在 10 到 400、未知語言退回英文', () => {
-    expect(readConfig({ refreshSeconds: 3, commits: 9999, language: 'fr', graphTheme: 'neon' })).toEqual({
+    // 推送相關的預設值走最佳實踐：預設關（最小權限）、受保護 main/master、尊重 pre-push hook
+    expect(readConfig({ refreshSeconds: 3, commits: 9999, language: 'fr', graphTheme: 'neon', worktreePush: 'yolo' })).toEqual({
       language: 'en',
       refreshSeconds: 10,
       commits: 400,
       graphTheme: 'auto',
+      push: false,
+      worktreePush: 'allow',
+      protectedBranches: ['main', 'master'],
+      respectHooks: true,
     })
     expect(readConfig({ refreshSeconds: 0 }).refreshSeconds).toBe(0)
+  })
+})
+
+describe('推送', () => {
+  const PUSH = { options: { push: true } }
+
+  test('預設關閉：沒有推送按鈕，設定區的開關是關', async ($, on) => {
+    world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ key: 'push:feat' })).toBeUndefined()
+    await ui.press({ key: 'settings' })
+    expect((await ui.find({ key: 'set-push' }))?.props.value).toBe('off')
+    expect(await ui.find({ key: 'set-worktree-push' })).toBeUndefined() // 推送沒開，政策欄位不出現
+    await ui.unmount()
+  })
+
+  test('按 ↑N 先看清單與確切指令，確認才推；指令固定、不帶強推、不會問密碼', PUSH, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run(RUN)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect((await ui.find({ key: 'push:feat' }))?.props.label).toBe('↑2 Push feat')
+      await ui.unmount()
+    }
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'push:feat' })
+    expect(repo.pushes).toEqual([]) // 按了 ↑N 還沒推
+    expect(await ui.find({ type: 'Text', text: 'git push -u origin feat' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /feat: 第二步/ })).toBeDefined()
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes).toEqual([{ args: ['push', '-u', 'origin', 'feat'], env: { GIT_TERMINAL_PROMPT: '0' } }])
+    expect(await ui.find({ type: 'Text', text: /Pushed feat to origin/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('取消就不推', PUSH, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'push:feat' })
+    await ui.press({ key: 'push-cancel' })
+    expect(await ui.find({ key: 'push-confirm' })).toBeUndefined()
+    expect(repo.pushes).toEqual([])
+    await ui.unmount()
+  })
+
+  test('受保護分支（remote 的預設分支）要確認兩次', PUSH, async ($, on) => {
+    const { repo } = world(on, { mainAhead: 1 })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'push:main' })
+    expect(await ui.find({ type: 'Text', text: /main is a protected branch/ })).toBeDefined()
+    expect((await ui.find({ key: 'push-confirm' }))?.props.label).toBe('Push to main…')
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes).toEqual([])
+    expect((await ui.find({ key: 'push-confirm' }))?.props.label).toBe('Yes, push to main')
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes.map(p => p.args)).toEqual([['push', 'origin', 'main']])
+    await ui.unmount()
+  })
+
+  test('確認前指令變了（upstream 剛設好）就換成新指令、等再按一次', PUSH, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'push:feat' })
+    repo.featUpstream = true
+    await ui.press({ key: 'refresh' })
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes).toEqual([])
+    expect(await ui.find({ type: 'Text', text: 'git push origin feat' })).toBeDefined()
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes.map(p => p.args)).toEqual([['push', 'origin', 'feat']])
+    await ui.unmount()
+  })
+
+  test('有 pre-push hook：預設不給推並說明原因', PUSH, async ($, on) => {
+    world(on, { hasHook: true })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ key: 'push:feat' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /pre-push hook/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('worktree 分支 allowKey：沒設 key 不給推並說明，設了就推到那個 remote', { options: { push: true, worktreePush: 'allowKey' } }, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ key: 'push:feat' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /claude\.worktreePushRemote/ })).toBeDefined()
+    repo.pushKey = 'origin'
+    await ui.press({ key: 'refresh' })
+    await ui.press({ key: 'push:feat' })
+    await ui.press({ key: 'push-confirm' })
+    expect(repo.pushes.map(p => p.args)).toEqual([['push', '-u', 'origin', 'feat']])
+    await ui.unmount()
+  })
+
+  test('推送失敗：把 git 的訊息顯示出來', PUSH, async ($, on) => {
+    world(on, { pushFails: ' ! [rejected]        feat -> feat (non-fast-forward)' })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'push:feat' })
+    await ui.press({ key: 'push-confirm' })
+    expect(await ui.find({ type: 'Text', text: /Pushing feat failed/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /non-fast-forward/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('只有按鈕能推：/canopy 帶什麼參數都不會推', PUSH, async ($, on) => {
+    const { repo } = world(on)
+    await $.command.run({ ...RUN, args: 'push feat' })
+    await $.command.run({ ...RUN, args: 'push origin feat --force' })
+    expect(repo.pushes).toEqual([])
+  })
+})
+
+describe('推送政策（規則表）', () => {
+  const base: CanopySnapshot = {
+    repoName: 'r',
+    repoPath: '/r',
+    cwdBranch: 'feat',
+    headSha: 'f2',
+    mainBranch: 'main',
+    noRemote: false,
+    remotes: ['origin', 'fork'],
+    branches: [
+      {
+        name: 'feat',
+        sha: 'f2',
+        upstream: null,
+        ahead: 2,
+        behind: 0,
+        noUpstream: true,
+        gone: false,
+        merged: false,
+        isCurrent: true,
+        worktree: { path: '/r/wt', name: 'feat', isMain: false, isDirty: false, session: null },
+      },
+    ],
+    commits: [],
+    defaultBranch: 'develop',
+    worktreePushRemote: null,
+    hasPrePushHook: false,
+    builtAt: NOW,
+  }
+  const cfg = (o: Partial<Config> = {}): Config => ({ ...readConfig({ push: true }), ...o })
+
+  test('worktree 分支 allowKey：有 key 就推到 key 指的 remote，key 指到不存在的 remote 就擋', () => {
+    const toFork = planPush({ ...base, worktreePushRemote: 'fork' }, 'feat', cfg({ worktreePush: 'allowKey' }))
+    expect(toFork?.isAllowed && toFork.plan.args).toEqual(['push', '-u', 'fork', 'feat'])
+    const missing = planPush({ ...base, worktreePushRemote: 'nope' }, 'feat', cfg({ worktreePush: 'allowKey' }))
+    expect(missing).toEqual({ isAllowed: false, reason: 'worktree-no-key' })
+    expect(planPush(base, 'feat', cfg({ worktreePush: 'block' }))).toEqual({ isAllowed: false, reason: 'worktree-block' })
+  })
+
+  test('remote 的預設分支一律受保護，加上設定的清單', () => {
+    const snap = { ...base, branches: [{ ...base.branches[0]!, name: 'develop', worktree: null }] }
+    const check = planPush(snap, 'develop', cfg({ protectedBranches: [] }))
+    expect(check?.isAllowed && check.plan.isProtected).toBe(true)
+  })
+
+  test('pre-push hook 預設擋，respectHooks 關掉才放', () => {
+    const snap = { ...base, hasPrePushHook: true }
+    expect(planPush(snap, 'feat', cfg())).toEqual({ isAllowed: false, reason: 'hook' })
+    expect(planPush(snap, 'feat', cfg({ respectHooks: false }))?.isAllowed).toBe(true)
+  })
+
+  test('受保護清單的設定：逗號分隔、去空白、去重複', () => {
+    expect(parseBranchList(' main, release ,,main ')).toEqual(['main', 'release'])
+    expect(readConfig({}).protectedBranches).toEqual(['main', 'master'])
   })
 })
 
@@ -311,6 +538,9 @@ describe('Svg', () => {
       remotes: ['origin'],
       branches: [],
       commits: many,
+      defaultBranch: 'main',
+      worktreePushRemote: null,
+      hasPrePushHook: false,
       builtAt: NOW,
     }
   }

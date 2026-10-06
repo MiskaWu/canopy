@@ -1,6 +1,6 @@
 {
   "name": "canopy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Git graph for Claude Code: a nudge above the prompt when your branch has unpushed commits, and a pane with every branch and worktree of the repo.",
   "author": { "name": "MiskaWu", "url": "https://github.com/MiskaWu" },
   "homepage": "https://github.com/MiskaWu/canopy",
@@ -34,6 +34,31 @@
       "description": "auto follows the app's light or dark appearance.",
       "default": "auto",
       "options": ["auto", "dark", "light"]
+    },
+    "push": {
+      "type": "boolean",
+      "title": "Push from the pane",
+      "description": "Off keeps canopy read-only. On adds a push button for each branch with unpushed commits; nothing is pushed until you confirm.",
+      "default": false
+    },
+    "worktreePush": {
+      "type": "string",
+      "title": "Pushing worktree branches",
+      "description": "allow: like any branch. allowKey: only to the remote the repo's local git config claude.worktreePushRemote names. block: never from the pane.",
+      "default": "allow",
+      "options": ["allow", "allowKey", "block"]
+    },
+    "protectedBranches": {
+      "type": "string",
+      "title": "Protected branches",
+      "description": "Comma-separated. Pushing one takes a second confirmation; the remote's default branch is always included.",
+      "default": "main,master"
+    },
+    "respectHooks": {
+      "type": "boolean",
+      "title": "Respect pre-push hooks",
+      "description": "Git hooks do not run when canopy pushes. On: a repository with a pre-push hook is not pushed from the pane (use a terminal). Off: push anyway, skipping the hook.",
+      "default": true
     }
   }
 }

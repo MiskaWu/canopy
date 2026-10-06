@@ -46,7 +46,28 @@ export type CanopySnapshot = {
   remotes: string[]
   branches: CanopyBranch[]
   commits: CanopyCommit[]
+  defaultBranch: string | null // origin/HEAD 指的分支，一律視為受保護
+  worktreePushRemote: string | null // repo 本地 git config 的 claude.worktreePushRemote（只讀）
+  hasPrePushHook: boolean // 有作用中的 pre-push hook（含 core.hooksPath）
   builtAt: number // 毫秒
+}
+
+/** 按下推送按鈕後、確認前的計畫：指令由 mod 組成，畫面上照實顯示。 */
+export type CanopyPushIntent = {
+  branch: string
+  remote: string
+  args: string[] // git 之後的參數，例如 ["push", "-u", "origin", "feat"]
+  commits: { sha: string; subject: string }[]
+  total: number // 要推的 commit 總數（清單最多列 10 筆）
+  isProtected: boolean
+  isArmed: boolean // 受保護分支按過第一次確認
+}
+
+export type CanopyPushResult = {
+  branch: string
+  remote: string
+  isOk: boolean
+  output: string
 }
 
 declare module 'claude-code' {
@@ -58,6 +79,9 @@ declare module 'claude-code' {
       extra: number // 「更多 commit」按過幾次；畫的筆數＝設定的 commits ×（1＋extra）
       isSettingsOpen: boolean // 面板裡的設定區是否展開
       settingsError: string | null // 上一次寫入設定被拒絕的原因
+      pushIntent: CanopyPushIntent | null
+      isPushing: boolean
+      pushResult: CanopyPushResult | null
     }
   }
 }
