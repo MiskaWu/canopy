@@ -11,25 +11,33 @@ export type SessionProbe = (worktreePath: string) => Promise<number | null>
 
 export class NotARepo extends Error {}
 
+/** 快照要碰的外界：跑 git、查 session 活性、查檔案在不在。 */
+export type SnapshotIO = {
+  git: Git
+  probe: SessionProbe
+  exists: (path: string) => Promise<boolean>
+}
+
 const LIVE_WINDOW_MS = 5 * 60 * 1000
 const SEP = '\x1f'
 
-export async function buildSnapshot(
-  git: Git,
-  cwd: string,
-  limit: number,
-  probe: SessionProbe,
-  now: number,
-): Promise<CanopySnapshot> {
+export async function buildSnapshot(io: SnapshotIO, cwd: string, limit: number, now: number): Promise<CanopySnapshot> {
+  const { git, probe, exists } = io
   const top = await git(['rev-parse', '--show-toplevel'], cwd)
   if (top === '') throw new NotARepo(cwd)
 
-  const [cwdBranch, headSha, remoteOut, wtOut] = await Promise.all([
+  // 推送相關的三件事：remote 預設分支、claude.worktreePushRemote（只讀，--local 與推送防護同一份）、
+  // pre-push hook 的路徑（--git-path 會照 core.hooksPath 解析）
+  const [cwdBranch, headSha, remoteOut, wtOut, originHead, pushKey, hookPath] = await Promise.all([
     git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd),
     git(['rev-parse', 'HEAD'], cwd),
     git(['remote'], cwd),
     git(['worktree', 'list', '--porcelain'], cwd),
+    git(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd),
+    git(['config', '--local', '--get', 'claude.worktreePushRemote'], cwd),
+    git(['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], cwd),
   ])
+  const hasPrePushHook = hookPath !== '' && (await exists(hookPath))
   const remotes = lines(remoteOut)
   const noRemote = remotes.length === 0
 
@@ -126,6 +134,9 @@ export async function buildSnapshot(
     remotes,
     branches,
     commits,
+    defaultBranch: originHead === '' ? null : originHead.replace(/^origin\//, ''),
+    worktreePushRemote: pushKey === '' ? null : pushKey,
+    hasPrePushHook,
     builtAt: now,
   }
 }

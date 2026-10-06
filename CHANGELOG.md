@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-10-06
+
+- Push from the pane, **off by default**. Each branch with unpushed commits gets a
+  `↑N Push` button that first shows the commits and the exact command; only your
+  confirmation runs it. The command is always `git push [-u] <remote> <branch>`, never
+  forced, with no password prompts.
+- New settings: worktree branches (push like any branch, only to
+  `claude.worktreePushRemote`, or never), protected branches (two confirmations; the
+  remote's default branch is always protected), and repositories with a pre-push hook
+  (push from a terminal instead, or push anyway).
+
 ## 0.2.0 — 2026-10-06
 
 - Settings, editable in the pane (**Settings** button) and under `/config`: language

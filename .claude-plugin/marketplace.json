@@ -3,14 +3,14 @@
   "owner": { "name": "MiskaWu", "url": "https://github.com/MiskaWu" },
   "metadata": {
     "description": "canopy: a git graph inside Claude Code.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "canopy",
       "source": "./mod",
       "description": "Git graph for Claude Code: a nudge above the prompt when your branch has unpushed commits, and a pane with every branch and worktree of the repo.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": { "name": "MiskaWu", "url": "https://github.com/MiskaWu" },
       "homepage": "https://github.com/MiskaWu/canopy",
       "repository": "https://github.com/MiskaWu/canopy",

@@ -6,10 +6,12 @@ import { ago, branchBadges, type BadgeKind } from './badges'
 import {
   COMMIT_CHOICES,
   MAX_COMMITS,
+  parseBranchList,
   readConfig,
   REFRESH_CHOICES,
   THEMES,
   withCurrent,
+  WORKTREE_PUSH,
   type Config,
   type ConfigField,
   type GraphTheme,
@@ -17,6 +19,7 @@ import {
 import { buildSnapshot, NotARepo, projectDirName, type Git, type SessionProbe } from './git'
 import { LANGUAGES, strings, type Strings } from './i18n'
 import { layoutGraph } from './lanes'
+import { isPolicyReason, planPush, pushCandidates, tidyOutput } from './push'
 import { laneColor, renderSvg } from './svg'
 import { textGraph, type Cell } from './textgraph'
 
@@ -33,6 +36,9 @@ const dismissed = atom({ plugin: 'canopy', key: 'dismissed' } as const, null)
 const extra = atom({ plugin: 'canopy', key: 'extra' } as const, 0)
 const isSettingsOpen = atom({ plugin: 'canopy', key: 'isSettingsOpen' } as const, false)
 const settingsError = atom({ plugin: 'canopy', key: 'settingsError' } as const, null)
+const pushIntent = atom({ plugin: 'canopy', key: 'pushIntent' } as const, null)
+const isPushing = atom({ plugin: 'canopy', key: 'isPushing' } as const, false)
+const pushResult = atom({ plugin: 'canopy', key: 'pushResult' } as const, null)
 
 type $ = EngineInterface
 
@@ -71,16 +77,20 @@ async function homeDir($: $): Promise<string | undefined> {
   return (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
 }
 
-async function rebuild($: $, cfg: Config): Promise<void> {
-  const git: Git = async (args, cwd) => {
+/** 唯讀的 git：失敗一律回 ''。GIT_OPTIONAL_LOCKS=0 讓 status 不去搶 index.lock，不卡到正在 commit 的 session。 */
+function readGit($: $): Git {
+  return async (args, cwd) => {
     try {
-      // GIT_OPTIONAL_LOCKS=0：status 不去搶 index.lock，避免卡到正在 commit 的 session
       const r = await $.process.run(['git', ...args], { cwd, env: { GIT_OPTIONAL_LOCKS: '0' }, timeoutMs: 20_000 })
       return r.exitCode === 0 ? r.stdout.replace(/\n+$/, '') : ''
     } catch {
       return ''
     }
   }
+}
+
+async function rebuild($: $, cfg: Config): Promise<void> {
+  const git = readGit($)
   // session 活性讀的是 Claude Code 自己的 session 記錄資料夾：盡力而為，讀不到就不顯示
   const home = await homeDir($)
   const probe: SessionProbe = async path => {
@@ -95,13 +105,94 @@ async function rebuild($: $, cfg: Config): Promise<void> {
   }
   try {
     const limit = commitLimit(cfg, await read($, extra))
-    const snap = await buildSnapshot(git, await $.session.cwd(), limit, probe, await $.clock.now())
+    const exists = async (path: string) => {
+      try {
+        return await $.fs.exists(path)
+      } catch {
+        return false
+      }
+    }
+    const snap = await buildSnapshot({ git, probe, exists }, await $.session.cwd(), limit, await $.clock.now())
     await update($, snapshot, () => snap)
     await update($, error, () => null)
   } catch (err) {
     await update($, snapshot, () => null)
     await update($, error, () => (err instanceof NotARepo ? 'not-repo' : String(err)))
   }
+}
+
+// ── 推送（只從面板的按鈕進來）──────────────────────────────
+
+/** 按下 ↑N：照目前快照組好計畫、抓要推的 commit，放進確認區。還不會推。 */
+async function startPush($: $, cfg: Config, branch: string): Promise<void> {
+  const snap = await read($, snapshot)
+  const check = snap === null ? null : planPush(snap, branch, cfg)
+  if (snap === null || check === null || !check.isAllowed) return
+  const { plan } = check
+  const git = readGit($)
+  const [listed, count] = await Promise.all([
+    git(['log', '--format=%h\x1f%s', '-n', '10', ...plan.range], snap.repoPath),
+    git(['rev-list', '--count', ...plan.range], snap.repoPath),
+  ])
+  const commits = listed
+    .split('\n')
+    .filter(line => line !== '')
+    .map(line => {
+      const [sha = '', ...subject] = line.split('\x1f')
+      return { sha, subject: subject.join('\x1f') }
+    })
+  await update($, pushResult, () => null)
+  await update($, pushIntent, () => ({
+    branch: plan.branch,
+    remote: plan.remote,
+    args: plan.args,
+    commits,
+    total: Number(count) || commits.length,
+    isProtected: plan.isProtected,
+    isArmed: false,
+  }))
+}
+
+/**
+ * 確認推送。先用最新的快照重組一次計畫：被擋了就說原因；指令和畫面上顯示的不同
+ * （例如 upstream 剛設好，不再需要 -u）就換成新的、等再按一次——跑的永遠是看過的那條。
+ * 受保護分支要按兩次。
+ */
+async function confirmPush($: $, cfg: Config, t: Strings): Promise<void> {
+  const intent = await read($, pushIntent)
+  const snap = await read($, snapshot)
+  if (intent === null || snap === null || (await read($, isPushing))) return
+  const check = planPush(snap, intent.branch, cfg)
+  if (check === null || !check.isAllowed) {
+    // 被政策擋下就說原因；推送關掉了、沒東西可推（別處已經推了）就只是收起確認區
+    const reason = check?.reason
+    await update($, pushIntent, () => null)
+    if (isPolicyReason(reason)) await update($, pushResult, () => ({ branch: intent.branch, remote: intent.remote, isOk: false, output: t.blocked[reason] }))
+    return
+  }
+  const { plan } = check
+  if (plan.args.join(' ') !== intent.args.join(' ')) {
+    await update($, pushIntent, () => ({ ...intent, remote: plan.remote, args: plan.args, isProtected: plan.isProtected, isArmed: false }))
+    return
+  }
+  if (plan.isProtected && !intent.isArmed) {
+    await update($, pushIntent, () => ({ ...intent, isArmed: true }))
+    return
+  }
+
+  await update($, isPushing, () => true)
+  let result: { isOk: boolean; output: string }
+  try {
+    // GIT_TERMINAL_PROMPT=0：要帳密時直接失敗，不會卡在沒有終端機的地方
+    const r = await $.process.run(['git', ...plan.args], { cwd: snap.repoPath, env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: 60_000 })
+    result = { isOk: r.exitCode === 0, output: tidyOutput(`${r.stdout}\n${r.stderr}`) }
+  } catch (err) {
+    result = { isOk: false, output: err instanceof Error ? err.message : String(err) }
+  }
+  await update($, pushIntent, () => null)
+  await update($, isPushing, () => false)
+  await update($, pushResult, () => ({ branch: plan.branch, remote: plan.remote, ...result }))
+  await refresh($, cfg)
 }
 
 // ── 提示列的判斷 ────────────────────────────────────────────
@@ -162,7 +253,7 @@ async function openPane($: $, cfg: Config, t: Strings): Promise<void> {
  * pluginConfigs，引擎隨即帶著新值重新載入模組。列的 key 從 $.config.list() 找，
  * 不自己拼：插件從哪裡載入（--plugin-dir、marketplace）會影響它的名字。
  */
-async function save($: $, field: ConfigField, value: string | number): Promise<void> {
+async function save($: $, field: ConfigField, value: string | number | boolean): Promise<void> {
   let reason: string | null = null
   try {
     const rows = await $.config.list()
@@ -239,6 +330,9 @@ export const register: Register = (on, options) => {
     const presses = await read($, extra)
     const isOpen = await read($, isSettingsOpen)
     const saveError = await read($, settingsError)
+    const intent = await read($, pushIntent)
+    const pushing = await read($, isPushing)
+    const lastPush = await read($, pushResult)
     const now = await $.clock.now()
     const limit = commitLimit(cfg, presses)
     const { Box, Text, Button } = $.ui.resolve(e)
@@ -270,6 +364,9 @@ export const register: Register = (on, options) => {
     const themeLabel = (theme: GraphTheme) => (theme === 'auto' ? t.themeAuto : theme === 'dark' ? t.themeDark : t.themeLight)
     const languageName = LANGUAGES.find(l => l.code === cfg.language)?.name ?? cfg.language
     const after = <T,>(list: readonly T[], current: T) => list[(list.indexOf(current) + 1) % list.length] as T
+    const onOff = (value: boolean) => (value ? t.on : t.off)
+    const hooksLabel = (respect: boolean) => (respect ? t.respectHooksOptions.respect : t.respectHooksOptions.skip)
+    const protectedText = cfg.protectedBranches.join(',')
 
     let fields
     if (e.surface === 'mobile') {
@@ -279,10 +376,20 @@ export const register: Register = (on, options) => {
           <Button key="set-refresh" label={`${t.refreshEvery}: ${refreshLabel(cfg.refreshSeconds)}`} onPress={() => save($, 'refreshSeconds', after(refreshChoices, cfg.refreshSeconds))} />
           <Button key="set-commits" label={`${t.commits}: ${cfg.commits}`} onPress={() => save($, 'commits', after(commitChoices, cfg.commits))} />
           <Button key="set-theme" label={`${t.graphTheme}: ${themeLabel(cfg.graphTheme)}`} onPress={() => save($, 'graphTheme', after(THEMES, cfg.graphTheme))} />
+          <Button key="set-push" label={`${t.pushSetting}: ${onOff(cfg.push)}`} onPress={() => save($, 'push', !cfg.push)} />
+          {cfg.push && (
+            <Box flexDirection="column">
+              <Button key="set-worktree-push" label={`${t.worktreePushSetting}: ${t.worktreePushOptions[cfg.worktreePush]}`} onPress={() => save($, 'worktreePush', after(WORKTREE_PUSH, cfg.worktreePush))} />
+              <Button key="set-hooks" label={`${t.respectHooksSetting}: ${hooksLabel(cfg.respectHooks)}`} onPress={() => save($, 'respectHooks', !cfg.respectHooks)} />
+              <Text dimColor>
+                {t.protectedSetting}: {protectedText}
+              </Text>
+            </Box>
+          )}
         </Box>
       )
     } else {
-      const { Select } = $.ui.resolve(e)
+      const { Select, Input } = $.ui.resolve(e)
       fields = (
         <Box flexDirection="column">
           <Select key="set-language" label={t.language} options={LANGUAGES.map(l => ({ value: l.code, label: l.name }))} value={cfg.language} onSelect={v => save($, 'language', v)} />
@@ -295,6 +402,45 @@ export const register: Register = (on, options) => {
           />
           <Select key="set-commits" label={t.commits} options={commitChoices.map(n => ({ value: String(n), label: String(n) }))} value={String(cfg.commits)} onSelect={v => save($, 'commits', Number(v))} />
           <Select key="set-theme" label={t.graphTheme} options={THEMES.map(th => ({ value: th, label: themeLabel(th) }))} value={cfg.graphTheme} onSelect={v => save($, 'graphTheme', v)} />
+          <Select
+            key="set-push"
+            label={t.pushSetting}
+            options={[
+              { value: 'off', label: t.off },
+              { value: 'on', label: t.on },
+            ]}
+            value={cfg.push ? 'on' : 'off'}
+            onSelect={v => save($, 'push', v === 'on')}
+          />
+          {cfg.push && (
+            <Box flexDirection="column">
+              <Select
+                key="set-worktree-push"
+                label={t.worktreePushSetting}
+                options={WORKTREE_PUSH.map(w => ({ value: w, label: t.worktreePushOptions[w] }))}
+                value={cfg.worktreePush}
+                onSelect={v => save($, 'worktreePush', v)}
+              />
+              <Select
+                key="set-hooks"
+                label={t.respectHooksSetting}
+                options={[
+                  { value: 'respect', label: t.respectHooksOptions.respect },
+                  { value: 'skip', label: t.respectHooksOptions.skip },
+                ]}
+                value={cfg.respectHooks ? 'respect' : 'skip'}
+                onSelect={v => save($, 'respectHooks', v === 'respect')}
+              />
+              <Input
+                key="set-protected"
+                label={t.protectedSetting}
+                value={protectedText}
+                placeholder="main,master"
+                onSubmit={v => save($, 'protectedBranches', parseBranchList(v).join(','))}
+              />
+              <Text dimColor>{t.protectedHint}</Text>
+            </Box>
+          )}
         </Box>
       )
     }
@@ -352,6 +498,65 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
+    // 推送區（設定開了才有）：確認中就顯示要推的 commit 與確切指令，否則列出可推的分支
+    let pushPanel = null
+    if (cfg.push && intent !== null) {
+      const confirmLabel = pushing
+        ? t.pushing(intent.branch)
+        : intent.isProtected
+          ? intent.isArmed
+            ? t.pushConfirmProtected(intent.branch)
+            : t.pushArm(intent.branch)
+          : t.pushConfirm
+      pushPanel = (
+        <Box flexDirection="column">
+          <Text bold>{t.pushTitle(intent.branch, intent.remote)}</Text>
+          <Text dimColor>git {intent.args.join(' ')}</Text>
+          {intent.commits.map(c => (
+            <Text>
+              <Text dimColor>
+                {'  '}
+                {c.sha}
+              </Text>{' '}
+              {c.subject}
+            </Text>
+          ))}
+          {intent.total > intent.commits.length && <Text dimColor>  {t.moreToPush(intent.total - intent.commits.length)}</Text>}
+          {intent.isProtected && <Text color="warning">{t.protectedWarning(intent.branch)}</Text>}
+          <Box flexDirection="row" gap={1}>
+            <Button key="push-confirm" variant="primary" label={confirmLabel} onPress={() => confirmPush($, cfg, t)} />
+            <Button key="push-cancel" label={t.cancel} onPress={() => update($, pushIntent, () => null)} />
+          </Box>
+        </Box>
+      )
+    } else if (cfg.push) {
+      const rows = pushCandidates(snap).map(b => ({ b, check: planPush(snap, b.name, cfg) }))
+      pushPanel = (
+        <Box flexDirection="column">
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            {rows
+              .filter(({ check }) => check?.isAllowed === true)
+              .map(({ b }) => (
+                <Button key={`push:${b.name}`} label={t.pushButton(b.ahead, b.name)} onPress={() => startPush($, cfg, b.name)} />
+              ))}
+          </Box>
+          {rows.map(({ b, check }) =>
+            check !== null && !check.isAllowed && isPolicyReason(check.reason) ? (
+              <Text dimColor>
+                {b.name}: {t.blocked[check.reason]}
+              </Text>
+            ) : null,
+          )}
+          {lastPush !== null && (
+            <Text color={lastPush.isOk ? 'success' : 'error'}>
+              {lastPush.isOk ? t.pushed(lastPush.branch, lastPush.remote) : t.pushFailed(lastPush.branch)}
+            </Text>
+          )}
+          {lastPush !== null && lastPush.output !== '' && <Text dimColor>{lastPush.output}</Text>}
+        </Box>
+      )
+    }
+
     if (e.surface === 'terminal') {
       const grid = textGraph(snap.commits, snap.headSha)
       const byTip = new Map<string, CanopyBranch[]>()
@@ -359,6 +564,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" gap={1}>
           {header}
+          {pushPanel}
           {toolbar}
           {settingsPanel}
           <Box flexDirection="column">
@@ -391,6 +597,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" gap={1}>
         {header}
+        {pushPanel}
         {toolbar}
         {settingsPanel}
         <Svg source={svg.source} alt={t.graphAlt(snap.repoName, svg.rows)} />
