@@ -27,7 +27,8 @@ the whole tree.
   branch labels and remote branches. Expand the pane with its ⤢ button.
 - **Keeps itself current**: after every turn, after Claude runs a git command, and
   on a timer.
-- **Read-only**: it runs `git` locally to look, and never fetches, pushes or writes.
+- **Read-only by default**: it runs `git` locally to look, and never fetches or
+  writes. Pushing from the pane is an opt-in setting (see [Pushing](#pushing)).
 
 On a terminal the pane draws the graph with box-drawing characters:
 
@@ -78,6 +79,42 @@ Open the pane and press **Settings**; the same values are under `/config`.
 | Auto refresh | every 45 s | 0 turns the timer off; it still refreshes after each turn and after git commands |
 | Commits in the graph | 80 | *More commits* in the pane adds this many again, up to 400 |
 | Graph theme | Follow the app | or always dark, or always light |
+| Push from the pane | Off | see [Pushing](#pushing) |
+| Worktree branches | Push like any branch | or only to the remote named by `claude.worktreePushRemote`, or never |
+| Protected branches | `main,master` | pushing one asks twice; the remote's default branch is always protected |
+| Repositories with a pre-push hook | Push from a terminal instead | or push anyway, skipping the hook |
+
+## Pushing
+
+Turn on **Push from the pane** in Settings, and each branch with unpushed commits gets
+a `↑N Push <branch>` button in the pane. Pressing it pushes nothing yet: it shows the
+commits that would go and the exact command, and you press **Push** to run it.
+
+What canopy holds to, whatever the settings:
+
+- **Only your press pushes.** canopy registers no command or tool that pushes, so
+  Claude cannot push through it; your own permission rules and hooks for Claude's git
+  commands keep working as before.
+- **The command is fixed**: `git push [-u] <remote> <branch>`, with `-u` only when the
+  branch has no upstream yet. No flags from anywhere, never `--force`. If the command
+  changes between pressing `↑N` and confirming (say the upstream was just set), the
+  new one is shown and needs another press: what runs is what you saw.
+- **No prompts**: git runs with `GIT_TERMINAL_PROMPT=0`, so a push that needs a
+  password fails with git's message instead of hanging. Failures, rejections
+  included, are shown in the pane as git wrote them.
+
+And what you can choose (defaults in the table above):
+
+- **Protected branches** take a second confirmation. The remote's default branch
+  (`origin/HEAD`) is always on the list.
+- **pre-push hooks** do not run when Claude Code runs git on a plugin's behalf. By
+  default a repository with an active pre-push hook (including `core.hooksPath`
+  setups such as husky) gets no push button, with the reason shown: push it from a
+  terminal so the hook runs.
+- **Worktree branches**: if you treat branches in linked worktrees as scratch work
+  that should not reach a shared remote, choose *Only to `claude.worktreePushRemote`*
+  (a push goes only to the remote named by that repository-local git config key, and
+  repositories without it get no button) or *Never*.
 
 ## What it reads
 
@@ -87,8 +124,11 @@ Open the pane and press **Settings**; the same values are under `/config`.
 - The modification times of the transcripts in `~/.claude/projects/` for the
   "session active" badge. This is Claude Code's own storage and may change between
   releases; when it cannot be read, the badge is left out.
+- For pushing: the remote's default branch, the repository-local git config key
+  `claude.worktreePushRemote` (read only, never written), and whether a pre-push hook
+  exists.
 
-Nothing leaves your machine.
+Nothing leaves your machine unless you press **Push**.
 
 ## Limits
 
