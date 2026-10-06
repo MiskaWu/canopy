@@ -7,9 +7,9 @@ import { layoutGraph } from './lanes'
 import { ago, laneColor, renderSvg, worktreeLabel } from './svg'
 import { textGraph, type Cell } from './textgraph'
 
-// canopy 的 mod 版：session 所在 repo 有未推 commit 時，輸入框上方出現一列提示，
+// canopy：session 所在 repo 有未推 commit 時，輸入框上方出現一列提示，
 // 按「看線圖」開面板看整棵樹（所有 worktree 的分支、ahead/behind、髒污、session 活性）。
-// 資料直接跑 git 取得，不依賴 canopy 伺服器。
+// 資料直接跑 git 取得，只讀不寫。
 
 const PANE = 'canopy'
 const DEFAULT_LIMIT = 80

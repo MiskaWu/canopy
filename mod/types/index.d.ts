@@ -1,5 +1,5 @@
 // canopy mod 的狀態契約：快照是 session 所在 repo 的 git 現況，
-// 由 hooks/git.ts 跑 git 組出來（對應 server/store.go 的 Snapshot）。
+// 由 hooks/git.ts 跑 git 組出來（對應伺服器版 store.go 的 Snapshot）。
 
 export type CanopySession = {
   isLive: boolean

@@ -1,6 +1,1 @@
-canopy
-*.log
-server/dist/
-web/dist/
-web/node_modules/
 mod/.claude-plugin/types/

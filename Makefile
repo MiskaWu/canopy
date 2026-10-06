@@ -1,51 +1,11 @@
-.PHONY: all web bin install status uninstall clean mod-test
+.PHONY: test typecheck
 
-# ── 腳印清單（機器上屬於 canopy 的東西，install／status／uninstall 都照這張表）──
-#   1. ./canopy            binary（build 產物，住在 repo 裡，ExecStart 直接指這裡）
-#   2. $(UNIT_DST)         systemd user unit 複本（repo 的 deploy/ 是源）
-#   3. canopy.service      enable 註冊（開機自啟）
-# 設定與狀態目錄：無。反安裝＝uninstall（拆服務）＋ clean（拆 build 產物）。
+# canopy 是一個 Claude Code mod（mod/）：沒有建置產物、沒有服務，裝法見 README。
 
-UNIT_SRC := deploy/canopy.service
-UNIT_DST := $(HOME)/.config/systemd/user/canopy.service
-
-all: web bin
-
-web:
-	cd web && npm run build
-	rm -rf server/dist && cp -r web/dist server/dist
-
-bin:
-	go vet ./... && go build -o canopy ./server
-
-install: all
-	cp $(UNIT_SRC) $(UNIT_DST)
-	systemctl --user daemon-reload
-	systemctl --user enable canopy 2>/dev/null || true
-	systemctl --user restart canopy
-	@for i in $$(seq 1 20); do \
-		curl -s -m 1 -o /dev/null http://127.0.0.1:7777/ && break; \
-		sleep 0.5; \
-	done  # restart 後服務要一下才開始監聽，等它起來再對帳，等不到就讓 status 報「沒回應」
-	@$(MAKE) --no-print-directory status
-
-status:
-	@test -x canopy && echo "ok    binary ./canopy（$$(stat -c %y canopy | cut -d. -f1) build）" || echo "缺    binary —— 跑 make"
-	@if [ ! -f $(UNIT_DST) ]; then echo "缺    unit 複本 $(UNIT_DST) —— 跑 make install"; \
-	elif cmp -s $(UNIT_SRC) $(UNIT_DST); then echo "ok    unit 複本與 repo 一致"; \
-	else echo "⚠     unit 複本與 repo 分岔 —— diff $(UNIT_SRC) $(UNIT_DST) 看是哪邊新"; fi
-	@echo "服務  $$(systemctl --user is-active canopy 2>/dev/null || echo '?')（$$(systemctl --user show canopy --property=UnitFileState --value 2>/dev/null)）"
-	@curl -s -m 3 -o /dev/null -w '面板  HTTP %{http_code} @ 127.0.0.1:7777\n' http://127.0.0.1:7777/ 2>/dev/null || echo "面板  沒回應（服務沒起或埠不對）"
-
-uninstall:
-	-systemctl --user disable --now canopy 2>/dev/null
-	rm -f $(UNIT_DST)
-	systemctl --user daemon-reload
-	@echo "服務已拆。build 產物還在 repo 裡，要清跑 make clean。"
-
-clean:
-	rm -rf canopy server/dist web/dist
-
-# Claude Code mod（mod/）：與伺服器各自獨立，不進 binary
-mod-test:
+test:
 	claude plugin validate mod && CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test mod
+
+# 型別由引擎在載入 mod 時寫進 mod/.claude-plugin/types/，沒被載入過的那份（例如新開的 worktree）就沒有
+typecheck:
+	@test -f mod/.claude-plugin/types/tsconfig.json || { echo "這份 mod 沒被 Claude Code 載入過，沒有型別可查（見 CLAUDE.md 的驗證一節）"; exit 1; }
+	npx --yes -p typescript@5.9 tsc -p mod
