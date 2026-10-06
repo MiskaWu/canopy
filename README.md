@@ -10,7 +10,7 @@ the whole tree.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/graph-dark.png">
-  <img alt="canopy's graph pane: branches from three worktrees, a merge, badges for unpushed commits, an active session and uncommitted changes" src="docs/graph-light.png">
+  <img alt="canopy's graph pane: branches from three worktrees, a merge, badges for unpushed commits, an active session, uncommitted changes and an untracked file" src="docs/graph-light.png">
 </picture>
 
 <sub>Example data from a made-up repository.</sub>
