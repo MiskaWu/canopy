@@ -10,12 +10,32 @@ server/   Go：main.go(wiring/embed) store.go(掃描/快照) watch.go(inotify/�
           mockup.html(視覺定稿) diag.html(面板能力診斷) dist/(web build 產物，gitignored)
 web/      Vite + React + TS：src/{App,Graph,PushDialog}.tsx lanes.ts(lane演算法) api.ts types.ts
 deploy/   canopy.service（systemd user unit）
+mod/      Claude Code mod：hooks/{register.tsx(提示列/面板/指令) git.ts(快照) lanes.ts svg.ts textgraph.ts}
+          types/index.d.ts($.state 契約) tests/(claude plugin test)
 ```
 
 - `make` = web build → `cp web/dist server/dist` → `go vet` + `go build -o canopy ./server`。
 - `make install` 部署並重啟 systemd user unit（含 enable，冪等）；`make status` 對帳腳印（binary／unit 複本分岔／服務／面板）；`make uninstall` 反安裝。腳印清單宣告在 Makefile 開頭。
 - 前端單獨開發：`cd web && npm run dev`（vite 會 proxy /api 到 127.0.0.1:7777）。
 - Go 端沒 dist 會編譯失敗（embed），先跑過一次 `make web`。
+- mod 改完跑 `make mod-test`（validate ＋ `claude plugin test mod`）。
+
+## Claude Code mod（mod/）
+
+伺服器版的另一種形態：裝進 Claude Code 當 mod，不用開服務、不經瀏覽器面板，
+所以下一節那整套 nip.io／跳轉／static 退路的約束**對 mod 都不適用**。
+
+- **範圍是 session 所在的 repo**（連同它所有 worktree），不是整個 ~/projects。
+- **提示列**（AbovePrompt）：session 所在分支有不在 remote 上的 commit 才出現，
+  「看線圖」開面板，「先不用」記下簽章（repo＋分支＋tip sha），tip 變了才回來。
+- **面板**（Pane `canopy`，也可 `/canopy` 開）：分支清單＋線圖。桌面版整張畫成
+  一份 Svg（文字也在裡面——介面的列高量不到，分開畫對不齊），上限 131072 字元，
+  超過就少畫幾列；終端機沒有 Svg，用框線字元畫（textgraph.ts）。
+- **資料直接跑 git**，一律帶 `GIT_OPTIONAL_LOCKS=0`：status 不搶 index.lock，
+  不會卡到正在 commit 的 session。觸發：回合結束、Bash 跑過 git、每 45 秒。
+- **唯讀**：不 fetch、不推。推送仍走伺服器版或使用者自己的 git。
+- lanes.ts 比 web 版多記每條邊走哪一道（`via`）：文字線圖逐列畫格子需要它；
+  SVG 也據此讓合併的第二父邊在合併點就彎出去，不再沿著主線疊著畫。
 
 ## 最重要的環境約束：Desktop 面板殼
 

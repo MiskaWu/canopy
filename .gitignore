@@ -3,3 +3,4 @@ canopy
 server/dist/
 web/dist/
 web/node_modules/
+mod/.claude-plugin/types/

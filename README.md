@@ -74,6 +74,25 @@ http://127-0-0-1.nip.io:7777
 重載一次的畫面重繪看得見。右上角顯示「資料 N 秒前 ⟳」就是退路正在生效，
 顯示綠點「即時」則是走在正常路徑上。細節見 `CLAUDE.md` 的環境約束一節。
 
+## Claude Code mod
+
+`mod/` 是同一件事的另一種形態：裝進 Claude Code，不用開服務。
+
+- session 所在的分支有還沒推上 remote 的 commit 時，輸入框上方出現一列提示：
+  `↑3 claude/xxx 有 3 個 commit 不在任何 remote 上 [看線圖] [先不用]`。
+- 按「看線圖」（或打 `/canopy`）開面板：這個 repo 所有分支與 worktree 的狀態，
+  加上線圖。桌面版畫成 SVG（滑過一列有完整訊息），終端機用框線字元畫。
+- 回合結束、Bash 跑過 git、以及每 45 秒自動重抓。只讀不寫：不 fetch、不推。
+
+載入：在 `~/.claude/settings.json` 的 `env` 加上
+
+```json
+"CLAUDE_CODE_PLUGIN_DIRS": "~/projects/canopy/mod"
+```
+
+之後開的 session 都會載入；單次試用則是 `claude --plugin-dir mod`。
+改完跑 `make mod-test`。
+
 ## API
 
 | 路徑 | 說明 |

@@ -1,0 +1,6 @@
+{
+  "name": "canopy",
+  "version": "0.1.0",
+  "description": "git 線圖：有未推 commit 時在輸入框上方提示，點開面板看整棵樹",
+  "types": "./types/index.d.ts"
+}
