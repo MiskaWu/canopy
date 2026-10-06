@@ -65,7 +65,8 @@ claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@can
 | 線圖 commit 數 | 80 | 面板的「更多 commit」每按一次再多一份，最多 400 |
 | 線圖主題 | 跟隨介面 | 或固定深色、固定淺色 |
 | 從面板推送 | 關 | 見[推送](#推送) |
-| worktree 分支 | 和一般分支一樣推 | 或只推到 `claude.worktreePushRemote` 指的 remote，或不從面板推 |
+| worktree 分支 | 和一般分支一樣推 | 或只推有設定的 repo，或不從面板推 |
+| 設定用的 git config key | `canopy.worktreePushRemote` | 「只推有設定的 repo」讀這個 key |
 | 受保護分支 | `main,master` | 推這些要確認兩次；remote 的預設分支一律受保護 |
 | 有 pre-push hook 的 repo | 改用終端機推 | 或照推（不執行 hook） |
 
@@ -92,8 +93,15 @@ claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@can
   作用中 pre-push hook 的 repo（含 husky 這類 `core.hooksPath` 設定）不給推送按鈕，
   並說明原因：請用終端機推，hook 才會跑。
 - **worktree 分支**：如果你把 linked worktree 裡的分支當成不該上共用 remote 的
-  拋棄式工作，選「只推到 `claude.worktreePushRemote`」（只推到這個 repo 本地 git
-  config 指名的 remote，沒設的 repo 就沒有按鈕）或「不從面板推」。
+  拋棄式工作，選「不從面板推」或「只推有設定的 repo」。後者由 repo 自己用本地
+  git config 表示同意、並指名 worktree 分支只能推去哪個 remote：
+
+  ```bash
+  git config --local canopy.worktreePushRemote origin
+  ```
+
+  沒設的 repo，worktree 分支就沒有推送按鈕。如果你自己的工具本來就有同類的 key，
+  把「設定用的 git config key」指向它，每個 repo 就只需要設一次，不用兩邊各設。
 
 ## 它讀了什麼
 
@@ -102,8 +110,8 @@ claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@can
   要用的 index 鎖。
 - `~/.claude/projects/` 裡對話記錄的修改時間，用來顯示「session 進行中」。這是
   Claude Code 自己的儲存方式，改版就可能變；讀不到時那個徽章就不顯示。
-- 推送用的：remote 的預設分支、repo 本地 git config 的 `claude.worktreePushRemote`
-  （只讀，永不寫）、有沒有 pre-push hook。
+- 推送用的：remote 的預設分支、repo 本地 git config 在上述 key 底下的值（只讀，
+  永不寫）、有沒有 pre-push hook。
 
 除非你按下「推送」，不會有任何資料離開你的電腦。
 

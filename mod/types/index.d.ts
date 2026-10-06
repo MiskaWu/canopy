@@ -47,7 +47,7 @@ export type CanopySnapshot = {
   branches: CanopyBranch[]
   commits: CanopyCommit[]
   defaultBranch: string | null // origin/HEAD 指的分支，一律視為受保護
-  worktreePushRemote: string | null // repo 本地 git config 的 claude.worktreePushRemote（只讀）
+  worktreePushRemote: string | null // repo 本地 git config 在設定的 key（worktreePushKey）底下指名的 remote（只讀）
   hasPrePushHook: boolean // 有作用中的 pre-push hook（含 core.hooksPath）
   builtAt: number // 毫秒
 }

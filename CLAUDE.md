@@ -32,8 +32,8 @@ docs/                      README 用的示範截圖（虛構資料）
 插件放在 `mod/` 子目錄而不是 repo 根目錄：根目錄底下有 `.claude/worktrees/`，
 整個 repo 當插件資料夾的話，每個 worktree 的檔案變動都會被引擎監看到。
 
-使用者自己的機器是開發用安裝：`~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS`
-指主 checkout 的 `mod/`，沒有透過 marketplace 裝。合併進 main 就是上線。
+開發用的安裝：`~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 指 clone 的
+`mod/`，不透過 marketplace 裝（兩份同名會衝突）。這樣合併進 main 就是自己這台上線。
 
 ## 驗證
 
@@ -82,8 +82,13 @@ docs/                      README 用的示範截圖（虛構資料）
 - **`$.process.run` 跑 git 時 repo 的 hook 不會執行**（引擎文件寫明）：所以預設對有
   pre-push hook 的 repo 不給推（`respectHooks`），偵測用 `rev-parse --git-path`，
   會照 `core.hooksPath` 解析。
-- **`claude.worktreePushRemote` 只讀、永不寫**：和使用者的推送防護 hook 共用同一個
-  key，用 `git config --local` 讀（不吃 global）。
+- **這是給別人用的 mod：不把任何人的個人慣例寫死進來。** 個人環境的東西一律做成
+  設定、預設值用通用的最佳實踐。例：worktree 分支的 opt-in key 預設是 canopy 自己的
+  `canopy.worktreePushRemote`；已經有同類慣例的人（例如自己的推送防護 hook 用的 key）
+  在設定裡把 `worktreePushKey` 指過去，一個 repo 只需要設一次。曾經把維護者私人的
+  `claude.worktreePushRemote` 寫死成選項，發佈前改掉（2026-10-06）。
+- **opt-in key 只讀、永不寫**：用 `git config --local` 讀（不吃 global，免得一行全域
+  設定放行整台機器）。key 的值先過 `isConfigKey`，不像 git config key 的一律退回預設。
 - **git 一律帶 `GIT_OPTIONAL_LOCKS=0`**：`git status` 不搶 index.lock，不會卡到
   正在 commit 的 session。
 - **範圍是 session 所在的 repo**（連同它所有 worktree），不掃整個目錄。

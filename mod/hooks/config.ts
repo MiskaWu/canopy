@@ -8,8 +8,12 @@ import { isLanguage, type Language } from './i18n'
 
 export type GraphTheme = 'auto' | 'dark' | 'light'
 
-/** worktree 分支能不能從面板推：照一般分支、只推到 claude.worktreePushRemote 指的 remote、不推。 */
-export type WorktreePush = 'allow' | 'allowKey' | 'block'
+/**
+ * worktree 分支能不能從面板推：照一般分支、只推有設定的 repo、不推。
+ * 「有設定」＝ repo 本地的 git config 用 worktreePushKey 這個 key 指名一個 remote，
+ * 推送就只去那裡。key 預設是 canopy 自己的；已經有同類慣例的人可以指向自己的 key。
+ */
+export type WorktreePush = 'allow' | 'perRepo' | 'block'
 
 export type Config = {
   language: Language
@@ -18,6 +22,7 @@ export type Config = {
   graphTheme: GraphTheme
   push: boolean
   worktreePush: WorktreePush
+  worktreePushKey: string
   protectedBranches: string[]
   respectHooks: boolean
 }
@@ -29,8 +34,14 @@ export const DEFAULTS: Config = {
   graphTheme: 'auto',
   push: false,
   worktreePush: 'allow',
+  worktreePushKey: 'canopy.worktreePushRemote',
   protectedBranches: ['main', 'master'],
   respectHooks: true,
+}
+
+/** git config 的 key：section.name（可多段），只允許英數與連字號，免得把怪字串送進 git。 */
+export function isConfigKey(text: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$/.test(text)
 }
 
 export const MIN_REFRESH_SECONDS = 10
@@ -40,7 +51,7 @@ export const MAX_COMMITS = 400
 export const REFRESH_CHOICES = [0, 15, 30, 45, 60, 120, 300]
 export const COMMIT_CHOICES = [40, 80, 160, 300]
 export const THEMES: readonly GraphTheme[] = ['auto', 'dark', 'light']
-export const WORKTREE_PUSH: readonly WorktreePush[] = ['allow', 'allowKey', 'block']
+export const WORKTREE_PUSH: readonly WorktreePush[] = ['allow', 'perRepo', 'block']
 
 /** userConfig 欄位名，寫回時的 key 是 `<plugin>.<field>`。 */
 export type ConfigField = keyof Config
@@ -60,6 +71,8 @@ export function readConfig(options: PluginOptions): Config {
     graphTheme: THEMES.find(t => t === options.graphTheme) ?? DEFAULTS.graphTheme,
     push: bool(options.push, DEFAULTS.push),
     worktreePush: WORKTREE_PUSH.find(w => w === options.worktreePush) ?? DEFAULTS.worktreePush,
+    worktreePushKey:
+      typeof options.worktreePushKey === 'string' && isConfigKey(options.worktreePushKey.trim()) ? options.worktreePushKey.trim() : DEFAULTS.worktreePushKey,
     protectedBranches: typeof options.protectedBranches === 'string' ? parseBranchList(options.protectedBranches) : DEFAULTS.protectedBranches,
     respectHooks: bool(options.respectHooks, DEFAULTS.respectHooks),
   }

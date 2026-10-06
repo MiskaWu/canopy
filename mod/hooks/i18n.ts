@@ -64,12 +64,14 @@ export type Strings = {
   pushing: (branch: string) => string
   pushed: (branch: string, remote: string) => string
   pushFailed: (branch: string) => string
-  blocked: Record<'hook' | 'worktree-block' | 'worktree-no-key', string>
+  blocked: { hook: string; 'worktree-block': string; 'worktree-no-key': (key: string) => string }
   pushSetting: string
   on: string
   off: string
   worktreePushSetting: string
-  worktreePushOptions: Record<'allow' | 'allowKey' | 'block', string>
+  worktreePushOptions: Record<'allow' | 'perRepo' | 'block', string>
+  worktreePushKeySetting: string
+  worktreePushKeyHint: (key: string) => string
   protectedSetting: string
   protectedHint: string
   respectHooksSetting: string
@@ -132,13 +134,15 @@ const en: Strings = {
   blocked: {
     hook: 'this repository has a pre-push hook, which does not run when canopy pushes. Push from a terminal.',
     'worktree-block': 'worktree branches are not pushed from the pane (Settings).',
-    'worktree-no-key': "worktree branch, and this repository's git config has no claude.worktreePushRemote naming a remote.",
+    'worktree-no-key': key => `worktree branch, and this repository's local git config has no ${key} naming a remote.`,
   },
   pushSetting: 'Push from the pane',
   on: 'On',
   off: 'Off',
   worktreePushSetting: 'Worktree branches',
-  worktreePushOptions: { allow: 'Push like any branch', allowKey: 'Only to claude.worktreePushRemote', block: 'Never from the pane' },
+  worktreePushOptions: { allow: 'Push like any branch', perRepo: 'Only in repositories that opt in', block: 'Never from the pane' },
+  worktreePushKeySetting: 'Opt-in git config key',
+  worktreePushKeyHint: key => `A repository opts in with: git config --local ${key} <remote>. Worktree branches then go only to that remote.`,
   protectedSetting: 'Protected branches',
   protectedHint: "Comma-separated; pushing one asks twice. The remote's default branch is always protected.",
   respectHooksSetting: 'Repositories with a pre-push hook',
@@ -198,13 +202,15 @@ const zhTW: Strings = {
   blocked: {
     hook: '這個 repo 有 pre-push hook，canopy 推送時不會執行它，請改用終端機推。',
     'worktree-block': '設定為不從面板推 worktree 分支。',
-    'worktree-no-key': 'worktree 分支，而這個 repo 的 git config 沒有 claude.worktreePushRemote 指名的 remote。',
+    'worktree-no-key': key => `worktree 分支，而這個 repo 的本地 git config 沒有用 ${key} 指名 remote。`,
   },
   pushSetting: '從面板推送',
   on: '開',
   off: '關',
   worktreePushSetting: 'worktree 分支',
-  worktreePushOptions: { allow: '和一般分支一樣推', allowKey: '只推到 claude.worktreePushRemote', block: '不從面板推' },
+  worktreePushOptions: { allow: '和一般分支一樣推', perRepo: '只推有設定的 repo', block: '不從面板推' },
+  worktreePushKeySetting: '設定用的 git config key',
+  worktreePushKeyHint: key => `repo 用這行指定：git config --local ${key} <remote>。之後 worktree 分支只推到那個 remote。`,
   protectedSetting: '受保護分支',
   protectedHint: '逗號分隔；推這些要確認兩次。remote 的預設分支一律受保護。',
   respectHooksSetting: '有 pre-push hook 的 repo',

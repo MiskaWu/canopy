@@ -5,6 +5,8 @@ import type { CanopyBranch, CanopySnapshot } from '../types'
 import { ago, branchBadges, type BadgeKind } from './badges'
 import {
   COMMIT_CHOICES,
+  DEFAULTS,
+  isConfigKey,
   MAX_COMMITS,
   parseBranchList,
   readConfig,
@@ -19,7 +21,7 @@ import {
 import { buildSnapshot, NotARepo, projectDirName, type Git, type SessionProbe } from './git'
 import { LANGUAGES, strings, type Strings } from './i18n'
 import { layoutGraph } from './lanes'
-import { isPolicyReason, planPush, pushCandidates, tidyOutput } from './push'
+import { isPolicyReason, planPush, pushCandidates, tidyOutput, type PolicyReason } from './push'
 import { laneColor, renderSvg } from './svg'
 import { textGraph, type Cell } from './textgraph'
 
@@ -112,7 +114,7 @@ async function rebuild($: $, cfg: Config): Promise<void> {
         return false
       }
     }
-    const snap = await buildSnapshot({ git, probe, exists }, await $.session.cwd(), limit, await $.clock.now())
+    const snap = await buildSnapshot({ git, probe, exists }, await $.session.cwd(), { limit, worktreePushKey: cfg.worktreePushKey }, await $.clock.now())
     await update($, snapshot, () => snap)
     await update($, error, () => null)
   } catch (err) {
@@ -122,6 +124,11 @@ async function rebuild($: $, cfg: Config): Promise<void> {
 }
 
 // ── 推送（只從面板的按鈕進來）──────────────────────────────
+
+/** 政策擋下的理由，給人看的那句；沒設定的 repo 那句要帶出目前設定的 key。 */
+function blockedText(t: Strings, cfg: Config, reason: PolicyReason): string {
+  return reason === 'worktree-no-key' ? t.blocked['worktree-no-key'](cfg.worktreePushKey) : t.blocked[reason]
+}
 
 /** 按下 ↑N：照目前快照組好計畫、抓要推的 commit，放進確認區。還不會推。 */
 async function startPush($: $, cfg: Config, branch: string): Promise<void> {
@@ -167,7 +174,9 @@ async function confirmPush($: $, cfg: Config, t: Strings): Promise<void> {
     // 被政策擋下就說原因；推送關掉了、沒東西可推（別處已經推了）就只是收起確認區
     const reason = check?.reason
     await update($, pushIntent, () => null)
-    if (isPolicyReason(reason)) await update($, pushResult, () => ({ branch: intent.branch, remote: intent.remote, isOk: false, output: t.blocked[reason] }))
+    if (isPolicyReason(reason)) {
+      await update($, pushResult, () => ({ branch: intent.branch, remote: intent.remote, isOk: false, output: blockedText(t, cfg, reason) }))
+    }
     return
   }
   const { plan } = check
@@ -380,6 +389,7 @@ export const register: Register = (on, options) => {
           {cfg.push && (
             <Box flexDirection="column">
               <Button key="set-worktree-push" label={`${t.worktreePushSetting}: ${t.worktreePushOptions[cfg.worktreePush]}`} onPress={() => save($, 'worktreePush', after(WORKTREE_PUSH, cfg.worktreePush))} />
+              {cfg.worktreePush === 'perRepo' && <Text dimColor>{t.worktreePushKeyHint(cfg.worktreePushKey)}</Text>}
               <Button key="set-hooks" label={`${t.respectHooksSetting}: ${hooksLabel(cfg.respectHooks)}`} onPress={() => save($, 'respectHooks', !cfg.respectHooks)} />
               <Text dimColor>
                 {t.protectedSetting}: {protectedText}
@@ -421,6 +431,18 @@ export const register: Register = (on, options) => {
                 value={cfg.worktreePush}
                 onSelect={v => save($, 'worktreePush', v)}
               />
+              {cfg.worktreePush === 'perRepo' && (
+                <Box flexDirection="column">
+                  <Input
+                    key="set-worktree-push-key"
+                    label={t.worktreePushKeySetting}
+                    value={cfg.worktreePushKey}
+                    placeholder={DEFAULTS.worktreePushKey}
+                    onSubmit={v => save($, 'worktreePushKey', isConfigKey(v.trim()) ? v.trim() : DEFAULTS.worktreePushKey)}
+                  />
+                  <Text dimColor>{t.worktreePushKeyHint(cfg.worktreePushKey)}</Text>
+                </Box>
+              )}
               <Select
                 key="set-hooks"
                 label={t.respectHooksSetting}
@@ -543,7 +565,7 @@ export const register: Register = (on, options) => {
           {rows.map(({ b, check }) =>
             check !== null && !check.isAllowed && isPolicyReason(check.reason) ? (
               <Text dimColor>
-                {b.name}: {t.blocked[check.reason]}
+                {b.name}: {blockedText(t, cfg, check.reason)}
               </Text>
             ) : null,
           )}

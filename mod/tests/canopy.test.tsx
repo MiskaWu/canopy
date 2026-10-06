@@ -31,7 +31,7 @@ const COMMITS = [
 
 /**
  * 假 repo 的可變部分，測試中途可以推進：feat 的 tip 與未推數、feat 有沒有 upstream、main 領先幾筆、
- * claude.worktreePushRemote、有沒有 pre-push hook、推送要不要失敗。
+ * repo 本地的 git config（key → 值）、有沒有 pre-push hook、推送要不要失敗。
  * logLimits 記下每次 git log 要幾筆，pushes 記下每次 git push 的參數與環境變數。
  */
 type Repo = {
@@ -39,7 +39,7 @@ type Repo = {
   ahead: number
   featUpstream: boolean
   mainAhead: number
-  pushKey: string | null
+  gitConfig: Record<string, string>
   hasHook: boolean
   pushFails: string | null
   logLimits: number[]
@@ -63,7 +63,7 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
   if (a === 'worktree list --porcelain') return `worktree ${MAIN}\nHEAD m1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD ${repo.tip}\nbranch refs/heads/feat\n`
   if (a === 'status --porcelain') return cwd === WT ? ' M hooks/register.tsx' : ''
   if (a === 'symbolic-ref --quiet --short refs/remotes/origin/HEAD') return 'origin/main'
-  if (a === 'config --local --get claude.worktreePushRemote') return repo.pushKey
+  if (a.startsWith('config --local --get ')) return repo.gitConfig[argv.at(-1) ?? ''] ?? null
   if (a === 'rev-parse --path-format=absolute --git-path hooks/pre-push') return HOOK
   if (a.startsWith('for-each-ref --merged')) return 'main'
   if (a.startsWith('for-each-ref refs/heads')) {
@@ -88,7 +88,7 @@ function fakeGit(argv: readonly string[], cwd: string | undefined, repo: Repo): 
 type Saved = { key: string; value: unknown }
 
 /** 把 session 擺進假 repo：git、工作目錄、HOME、session 記錄、時鐘、開面板、/config。 */
-type WorldOptions = { ahead?: number; cwd?: string; isNotRepo?: boolean; denySave?: string } & Partial<Pick<Repo, 'mainAhead' | 'pushKey' | 'hasHook' | 'pushFails'>>
+type WorldOptions = { ahead?: number; cwd?: string; isNotRepo?: boolean; denySave?: string } & Partial<Pick<Repo, 'mainAhead' | 'gitConfig' | 'hasHook' | 'pushFails'>>
 
 function world(on: On, opts: WorldOptions = {}) {
   const opened: string[] = []
@@ -98,7 +98,7 @@ function world(on: On, opts: WorldOptions = {}) {
     ahead: opts.ahead ?? 2,
     featUpstream: false,
     mainAhead: opts.mainAhead ?? 0,
-    pushKey: opts.pushKey ?? null,
+    gitConfig: opts.gitConfig ?? {},
     hasHook: opts.hasHook ?? false,
     pushFails: opts.pushFails ?? null,
     logLimits: [],
@@ -132,7 +132,7 @@ function world(on: On, opts: WorldOptions = {}) {
   })
   // /config：插件的列以 `<plugin>@inline.<field>` 命名，確認寫回時用的是列表給的 key
   on('config.list', () => ({
-    value: ['language', 'refreshSeconds', 'commits', 'graphTheme', 'push', 'worktreePush', 'protectedBranches', 'respectHooks'].map(field => ({
+    value: ['language', 'refreshSeconds', 'commits', 'graphTheme', 'push', 'worktreePush', 'worktreePushKey', 'protectedBranches', 'respectHooks'].map(field => ({
       key: `canopy@inline.${field}`,
       label: field,
       kind: 'text' as const,
@@ -307,6 +307,7 @@ describe('面板裡的設定', () => {
       graphTheme: 'auto',
       push: false,
       worktreePush: 'allow',
+      worktreePushKey: 'canopy.worktreePushRemote',
       protectedBranches: ['main', 'master'],
       respectHooks: true,
     })
@@ -397,17 +398,27 @@ describe('推送', () => {
     await ui.unmount()
   })
 
-  test('worktree 分支 allowKey：沒設 key 不給推並說明，設了就推到那個 remote', { options: { push: true, worktreePush: 'allowKey' } }, async ($, on) => {
+  test('worktree 分支 perRepo：repo 沒設定就不給推並說明怎麼設，設了就推到那個 remote', { options: { push: true, worktreePush: 'perRepo' } }, async ($, on) => {
     const { repo } = world(on)
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect(await ui.find({ key: 'push:feat' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /claude\.worktreePushRemote/ })).toBeDefined()
-    repo.pushKey = 'origin'
+    expect(await ui.find({ type: 'Text', text: /canopy\.worktreePushRemote/ })).toBeDefined()
+    repo.gitConfig['canopy.worktreePushRemote'] = 'origin'
     await ui.press({ key: 'refresh' })
     await ui.press({ key: 'push:feat' })
     await ui.press({ key: 'push-confirm' })
     expect(repo.pushes.map(p => p.args)).toEqual([['push', '-u', 'origin', 'feat']])
+    await ui.unmount()
+  })
+
+  test('perRepo 的 key 可以指向自己既有的慣例，就只讀那個 key', { options: { push: true, worktreePush: 'perRepo', worktreePushKey: 'team.pushRemote' } }, async ($, on) => {
+    world(on, { gitConfig: { 'canopy.worktreePushRemote': 'origin', 'team.pushRemote': 'origin' } })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ key: 'push:feat' })).toBeDefined()
+    await ui.press({ key: 'settings' })
+    expect((await ui.find({ key: 'set-worktree-push-key' }))?.props.value).toBe('team.pushRemote')
     await ui.unmount()
   })
 
@@ -461,12 +472,19 @@ describe('推送政策（規則表）', () => {
   }
   const cfg = (o: Partial<Config> = {}): Config => ({ ...readConfig({ push: true }), ...o })
 
-  test('worktree 分支 allowKey：有 key 就推到 key 指的 remote，key 指到不存在的 remote 就擋', () => {
-    const toFork = planPush({ ...base, worktreePushRemote: 'fork' }, 'feat', cfg({ worktreePush: 'allowKey' }))
+  test('worktree 分支 perRepo：repo 指名的 remote 就推去那裡，指到不存在的 remote 就擋', () => {
+    const toFork = planPush({ ...base, worktreePushRemote: 'fork' }, 'feat', cfg({ worktreePush: 'perRepo' }))
     expect(toFork?.isAllowed && toFork.plan.args).toEqual(['push', '-u', 'fork', 'feat'])
-    const missing = planPush({ ...base, worktreePushRemote: 'nope' }, 'feat', cfg({ worktreePush: 'allowKey' }))
+    const missing = planPush({ ...base, worktreePushRemote: 'nope' }, 'feat', cfg({ worktreePush: 'perRepo' }))
     expect(missing).toEqual({ isAllowed: false, reason: 'worktree-no-key' })
     expect(planPush(base, 'feat', cfg({ worktreePush: 'block' }))).toEqual({ isAllowed: false, reason: 'worktree-block' })
+  })
+
+  test('opt-in 的 key 預設是 canopy 自己的；不像 git config key 的值不收', () => {
+    expect(readConfig({}).worktreePushKey).toBe('canopy.worktreePushRemote')
+    expect(readConfig({ worktreePushKey: ' team.pushRemote ' }).worktreePushKey).toBe('team.pushRemote')
+    expect(readConfig({ worktreePushKey: '--global x' }).worktreePushKey).toBe('canopy.worktreePushRemote')
+    expect(readConfig({ worktreePushKey: 'nosection' }).worktreePushKey).toBe('canopy.worktreePushRemote')
   })
 
   test('remote 的預設分支一律受保護，加上設定的清單', () => {

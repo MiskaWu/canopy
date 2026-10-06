@@ -21,20 +21,23 @@ export type SnapshotIO = {
 const LIVE_WINDOW_MS = 5 * 60 * 1000
 const SEP = '\x1f'
 
-export async function buildSnapshot(io: SnapshotIO, cwd: string, limit: number, now: number): Promise<CanopySnapshot> {
+/** 快照要讀的設定：讀哪個 git config key 當作 worktree 分支的推送目標。 */
+export type SnapshotOptions = { limit: number; worktreePushKey: string }
+
+export async function buildSnapshot(io: SnapshotIO, cwd: string, opts: SnapshotOptions, now: number): Promise<CanopySnapshot> {
   const { git, probe, exists } = io
   const top = await git(['rev-parse', '--show-toplevel'], cwd)
   if (top === '') throw new NotARepo(cwd)
 
-  // 推送相關的三件事：remote 預設分支、claude.worktreePushRemote（只讀，--local 與推送防護同一份）、
-  // pre-push hook 的路徑（--git-path 會照 core.hooksPath 解析）
+  // 推送相關的三件事：remote 預設分支、worktree 分支的推送目標（repo 本地 git config，只讀，
+  // --local 不吃 global）、pre-push hook 的路徑（--git-path 會照 core.hooksPath 解析）
   const [cwdBranch, headSha, remoteOut, wtOut, originHead, pushKey, hookPath] = await Promise.all([
     git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd),
     git(['rev-parse', 'HEAD'], cwd),
     git(['remote'], cwd),
     git(['worktree', 'list', '--porcelain'], cwd),
     git(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd),
-    git(['config', '--local', '--get', 'claude.worktreePushRemote'], cwd),
+    git(['config', '--local', '--get', opts.worktreePushKey], cwd),
     git(['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], cwd),
   ])
   const hasPrePushHook = hookPath !== '' && (await exists(hookPath))
@@ -64,7 +67,7 @@ export async function buildSnapshot(io: SnapshotIO, cwd: string, limit: number, 
     git(['for-each-ref', '--merged', mergedTarget, '--format=%(refname:short)', 'refs/heads'], repoPath),
     git(['for-each-ref', 'refs/heads', `--format=%(refname:short)${SEP}%(objectname)${SEP}%(upstream:short)${SEP}%(upstream:track)`], repoPath),
     git(
-      ['log', '--topo-order', '-n', String(limit), `--format=%H${SEP}%P${SEP}%ct${SEP}%D${SEP}%an${SEP}%s`, '--exclude=refs/stash', '--all', ...detached],
+      ['log', '--topo-order', '-n', String(opts.limit), `--format=%H${SEP}%P${SEP}%ct${SEP}%D${SEP}%an${SEP}%s`, '--exclude=refs/stash', '--all', ...detached],
       repoPath,
     ),
   ])
