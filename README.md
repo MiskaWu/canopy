@@ -50,14 +50,9 @@ On a terminal the pane draws the graph with box-drawing characters:
 ## Install
 
 Requirements: Claude Code **2.1.288 or later** and git. canopy is a *mod*, a plugin of
-function hooks, which Claude Code still ships as early access: turn them on by adding
-this to the `env` block of `~/.claude/settings.json`:
+function hooks.
 
-```json
-"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
-```
-
-Then, in Claude Code:
+In Claude Code in a terminal:
 
 ```
 /plugin marketplace add MiskaWu/canopy
@@ -70,7 +65,16 @@ or from a shell:
 claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@canopy
 ```
 
-New sessions load it. Type `/canopy` to open the pane.
+New sessions load it. Type `/canopy` to open the pane. The desktop app's Code tab can't
+run `/plugin`: use the shell command once, and the desktop app loads canopy too.
+
+If `/canopy` doesn't show up in a new session, function hooks may not be on for your
+account yet (Claude Code is still rolling them out). Turn them on by adding this to the
+`env` block of `~/.claude/settings.json`, then start a new session:
+
+```json
+"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+```
 
 ## Settings
 

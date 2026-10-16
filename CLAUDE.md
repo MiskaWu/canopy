@@ -32,8 +32,11 @@ docs/                      README 用的示範截圖（虛構資料）
 插件放在 `mod/` 子目錄而不是 repo 根目錄：根目錄底下有 `.claude/worktrees/`，
 整個 repo 當插件資料夾的話，每個 worktree 的檔案變動都會被引擎監看到。
 
-開發用的安裝：`~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 指 clone 的
-`mod/`，不透過 marketplace 裝（兩份同名會衝突）。這樣合併進 main 就是自己這台上線。
+維護者這台的安裝（2026-10-16 起）：跟別人一樣走正式安裝（`claude plugin marketplace add
+MiskaWu/canopy` ＋ `claude plugin install canopy@canopy`），設定在 `pluginConfigs["canopy@canopy"]`。
+不再用 `CLAUDE_CODE_PLUGIN_DIRS` 掛 clone（和安裝的那份同名，兩份會衝突）。所以**合併進 main 不等於上線**：
+推上 GitHub、升版本號，再跑 `claude plugin marketplace update canopy && claude plugin update canopy@canopy`，
+然後 `/reload-plugins` 或開新對話。
 
 ## 驗證
 
@@ -50,8 +53,9 @@ docs/                      README 用的示範截圖（虛構資料）
 - **測試看的是 hook 與畫出來的樹，看不到實際長相**：
   - 終端機：用 tmux 開一個 `claude --plugin-dir <worktree>/mod`，送 `/canopy`，
     `tmux capture-pane` 看畫面；`ctrl+x tab` 把鍵盤交給面板後按 `s` 開設定區。
-    使用者 settings 的 `CLAUDE_CODE_PLUGIN_DIRS` 也會載入主 checkout 那份，
-    `--settings` 蓋不掉它，要靠 `--plugin-dir`。
+    已安裝的 `canopy@canopy` 和 `--plugin-dir` 那份同名，測之前先
+    `claude plugin disable canopy@canopy`，測完 `claude plugin enable canopy@canopy`
+    （disable 是使用者層級，期間其他對話重載後也看不到 canopy）。
   - 桌面版：只能請使用者在 Desktop 實看、截圖回來對。SVG 本身可以用 headless
     Chromium 包在 `<img>` 裡截圖檢查。
 - **設定寫回（`$.config.set`）在真 session 驗過**（2026-10-06，使用者在 Desktop

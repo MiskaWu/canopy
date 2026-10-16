@@ -34,14 +34,9 @@ Claude Code 裡的 git 線圖。[English](README.md)
 ## 安裝
 
 需求：Claude Code **2.1.288 以上**、git。canopy 是一個 *mod*（function hooks 寫成的
-插件），Claude Code 目前還以 early access 提供，要先在 `~/.claude/settings.json`
-的 `env` 打開：
+插件）。
 
-```json
-"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
-```
-
-接著在 Claude Code 裡：
+在終端機的 Claude Code 裡：
 
 ```
 /plugin marketplace add MiskaWu/canopy
@@ -52,6 +47,15 @@ Claude Code 裡的 git 線圖。[English](README.md)
 
 ```bash
 claude plugin marketplace add MiskaWu/canopy && claude plugin install canopy@canopy
+```
+
+桌面 app 的 Code 分頁不能跑 `/plugin`：在 shell 跑一次上面那行，桌面 app 也會載入 canopy。
+
+新開的對話裡沒有 `/canopy` 的話，可能是你的帳號還沒開放 function hooks（Claude Code
+還在逐步開放）。在 `~/.claude/settings.json` 的 `env` 加上這行，再開新對話：
+
+```json
+"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
 ```
 
 之後新開的 session 都會載入，打 `/canopy` 開面板。
