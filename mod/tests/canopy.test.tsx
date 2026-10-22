@@ -128,7 +128,12 @@ function world(on: On, opts: WorldOptions = {}) {
     return { value: { isPlaced: true as const } }
   })
   on('ui.close', () => ({ value: undefined }))
+  // 代替引擎：沒有問卷時引擎在這一塊什麼都不畫，所以回空的 Box。每次畫到這裡就記下收到的 maxRows：
+  // 空的 Box 在畫出來的樹上看不出來、ui.find 又只找 canopy 自己的元素，canopy 回自己的樹不叫 next、
+  // 把下層整個蓋掉時，原本的斷言全都照樣過（0.3.1 就這樣蓋掉了 baton）。看這份紀錄才咬得到。
+  const engineRows: number[] = []
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    engineRows.push(e.props.maxRows)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
@@ -148,7 +153,7 @@ function world(on: On, opts: WorldOptions = {}) {
     saved.push({ key: e.key, value: e.value })
     return { value: e.value }
   })
-  return { opened, repo, saved }
+  return { opened, repo, saved, engineRows }
 }
 
 const BAND = {
@@ -168,13 +173,15 @@ const ZH = { options: { language: 'zh-TW' } }
 
 describe('提示列', () => {
   test('預設英文：有未推 commit 時出現，按「View graph」開面板', async ($, on) => {
-    const { opened } = world(on)
+    const { opened, engineRows } = world(on)
     await $.command.run(RUN) // 指令會開面板並抓一次快照
     expect(opened).toEqual(['canopy'])
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ ...BAND, surface })
       expect(await ui.find({ type: 'Text', text: /feat has 2 commits not on any remote/ })).toBeDefined()
       expect((await ui.find({ key: 'open' }))?.props.label).toBe('View graph')
+      // 提示列出現時下層照樣畫，只是少了提示列那一列
+      expect(engineRows.at(-1)).toBe(BAND.props.maxRows - 1)
       await ui.press({ key: 'open' })
       await ui.unmount()
     }
@@ -191,26 +198,107 @@ describe('提示列', () => {
   })
 
   test('按掉之後消失，分支再動才回來', async ($, on) => {
-    const { repo } = world(on)
+    const { repo, engineRows } = world(on)
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
     expect(await ui.find({ key: 'open' })).toBeDefined()
     await ui.press({ key: 'dismiss' })
     expect(await ui.find({ key: 'open' })).toBeUndefined()
+    expect(engineRows.at(-1)).toBe(BAND.props.maxRows) // 讓開了：下層拿回整個帶子
 
     // 再 commit 一次：簽章變了，提示回來
     repo.tip = 'f3'
     repo.ahead = 3
     await $.command.run(RUN)
     expect(await ui.find({ type: 'Text', text: /feat has 3 commits/ })).toBeDefined()
+    expect(engineRows.at(-1)).toBe(BAND.props.maxRows - 1)
     await ui.unmount()
   })
 
-  test('全都推了就不出現', async ($, on) => {
-    world(on, { ahead: 0 })
+  test('全都推了就不出現，帶子整個交給下層', async ($, on) => {
+    const { engineRows } = world(on, { ahead: 0 })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
     expect(await ui.find({ key: 'open' })).toBeUndefined()
+    expect(engineRows.at(-1)).toBe(BAND.props.maxRows)
+    await ui.unmount()
+  })
+
+  test('問卷佔著帶子時讓路：不畫提示列，下層拿到整個帶子', async ($, on) => {
+    const { engineRows } = world(on)
+    await $.command.run(RUN)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...BAND, surface, props: { ...BAND.props, hasSurvey: true } })
+      expect(await ui.find({ key: 'open' })).toBeUndefined()
+      expect(engineRows.at(-1)).toBe(BAND.props.maxRows)
+      await ui.unmount()
+    }
+  })
+})
+
+/** 裝在 canopy 之後、鏈上在它裡層的 mod：一列提示，把收到的 maxRows 寫進字裡；自己佔著不叫 next，和 baton 一樣。 */
+const INNER = {
+  name: 'inner',
+  tier: 'append' as const,
+  register(on: On) {
+    on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+      const { Box, Button, Text } = $.ui.resolve(e)
+      // 按鈕 key 刻意和 canopy 的撞名：按鍵依外掛分開，不會互相按到
+      return (
+        <Box flexDirection="row" gap={1}>
+          <Text>{`裡層的提示（給我 ${e.props.maxRows} 列）`}</Text>
+          <Button key="dismiss" label="知道了" onPress={() => $.ui.toast('inner: dismiss')} />
+        </Box>
+      )
+    })
+  },
+}
+
+/** 畫出來的樹上所有的字與按鈕標籤，照文件順序；別的外掛畫的只讀得到這裡（ui.find 只找 canopy 自己的）。 */
+function texts(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(texts).join('')
+  if (typeof node !== 'object' || node === null) return ''
+  const { props, children } = node as { props?: { label?: unknown }; children?: unknown }
+  return [typeof props?.label === 'string' ? props.label : '', texts(children)].join('\n')
+}
+
+describe('和其他 mod 共用輸入框上方', () => {
+  test('提示列出現時，鏈上在裡層的 mod 照樣畫得出來，在提示列下面、拿到的列數少一列', { plugins: [INNER] }, async ($, on) => {
+    world(on)
+    await $.command.run(RUN)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...BAND, surface })
+      const drawn = texts(await ui.drawn())
+      expect(await ui.find({ key: 'open' })).toBeDefined()
+      expect(drawn).toContain(`裡層的提示（給我 ${BAND.props.maxRows - 1} 列）`)
+      expect(drawn.indexOf('feat has 2 commits')).toBeGreaterThanOrEqual(0)
+      expect(drawn.indexOf('feat has 2 commits')).toBeLessThan(drawn.indexOf('裡層的提示'))
+      await ui.unmount()
+    }
+  })
+
+  test('疊著的時候兩邊的按鈕都按得到，同名的 key 各按各的；按掉提示列，裡層拿回整個帶子', { plugins: [INNER] }, async ($, on) => {
+    const { opened } = world(on)
+    const toasts: string[] = []
+    on('ui.toast', ($, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+    await ui.press({ key: 'dismiss', plugin: 'inner' })
+    expect(toasts).toEqual(['inner: dismiss'])
+    expect(await ui.find({ key: 'open' })).toBeDefined() // 按的是裡層的，canopy 的提示列還在
+
+    await ui.press({ key: 'open' })
+    expect(opened).toEqual(['canopy', 'canopy'])
+
+    await ui.press({ key: 'dismiss' })
+    expect(toasts).toEqual(['inner: dismiss'])
+    expect(await ui.find({ key: 'open' })).toBeUndefined()
+    expect(texts(await ui.drawn())).toContain(`裡層的提示（給我 ${BAND.props.maxRows} 列）`)
     await ui.unmount()
   })
 })

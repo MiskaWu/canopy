@@ -19,7 +19,8 @@ the whole tree.
 
 - **A nudge above the prompt** when the branch the session is on has commits that
   are not on any remote: `↑3 claude/search-api has 3 commits not on any remote
-  [View graph] [Not now]`. *Not now* hides it until the branch moves again.
+  [View graph] [Not now]`. *Not now* hides it until the branch moves again. It
+  stacks on top of whatever other mods show above the prompt instead of hiding it.
 - **The graph pane** (*View graph*, or `/canopy`). On top, the repository's branches
   with their state: unpushed (`↑N`) and behind (`↓N`) counts, which worktree holds
   them, whether that worktree's Claude session is active, merged into the main

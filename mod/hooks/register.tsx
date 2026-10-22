@@ -31,6 +31,8 @@ import { textGraph, type Cell } from './textgraph'
 
 const PANE = 'canopy'
 const BRANCH_ROWS = 10
+// 提示列佔的列數：一段 wrap="truncate" 的字，永遠一列
+const BAND_ROWS = 1
 
 const snapshot = atom({ plugin: 'canopy', key: 'snapshot' } as const, null)
 const error = atom({ plugin: 'canopy', key: 'error' } as const, null)
@@ -308,26 +310,33 @@ export const register: Register = (on, options) => {
   })
 
   // ── 輸入框上方的提示列 ──
+  // 這一塊是所有 mod 共用的一個位置，引擎只畫最外層 hook 回的那一棵樹。照 baton 定下的約定「疊」不「佔」：
+  // 有東西要顯示時也先叫 next，讓鏈上在裡層的 mod 與引擎照樣畫（往下傳的 maxRows 扣掉提示列那一列），
+  // 再把提示列疊在它們上面。回自己的樹又不叫 next，裡層的就整個不見（0.3.1 這樣蓋掉了 baton 的指令卡片）。
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const pending = pendingOf(await read($, snapshot))
     if (pending === null || pending.signature === (await read($, dismissed))) return next(e)
 
+    const below = await next({ ...e, props: { ...e.props, maxRows: Math.max(0, e.props.maxRows - BAND_ROWS) } })
     const { Box, Text, Button } = $.ui.resolve(e)
     const { branch, others, signature } = pending
     // 按鈕不設 hotkey：輸入框空著時按數字會按到提示列的按鈕，吃掉使用者打的字
     return (
-      <Box flexDirection="row" gap={1} alignItems="center">
-        <Text color="warning" bold>
-          ↑{branch.ahead}
-        </Text>
-        <Text wrap="truncate">
-          <Text bold>{branch.name}</Text>
-          {t.bandRest(branch.ahead, branch.upstream)}
-          {others > 0 ? t.bandOthers(others) : ''}
-        </Text>
-        <Button key="open" label={t.openGraph} variant="primary" onPress={() => openPane($, cfg, t)} />
-        <Button key="dismiss" label={t.notNow} role="dismiss" onPress={() => update($, dismissed, () => signature)} />
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1} alignItems="center">
+          <Text color="warning" bold>
+            ↑{branch.ahead}
+          </Text>
+          <Text wrap="truncate">
+            <Text bold>{branch.name}</Text>
+            {t.bandRest(branch.ahead, branch.upstream)}
+            {others > 0 ? t.bandOthers(others) : ''}
+          </Text>
+          <Button key="open" label={t.openGraph} variant="primary" onPress={() => openPane($, cfg, t)} />
+          <Button key="dismiss" label={t.notNow} role="dismiss" onPress={() => update($, dismissed, () => signature)} />
+        </Box>
+        {below}
       </Box>
     )
   })

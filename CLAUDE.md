@@ -121,6 +121,12 @@ MiskaWu/canopy` ＋ `claude plugin install canopy@canopy`），設定在 `plugin
   終端機線圖）不知道主題，用深淺底都讀得清楚的中間色（`laneColor`）。
 - **Svg 的 source 上限 131072 字元**：`renderSvg` 超過就少畫幾列，面板會說明。
 - **文字也畫在 SVG 裡**：介面的列高量不到，文字和線圖分開畫會對不齊。
+- **提示列和別的 mod 共用輸入框上方，疊不佔**：那一塊所有 mod 共用一個位置，引擎只畫
+  最外層 hook 回的樹。照 baton README「和其他 mod 共用輸入框上方」的約定：沒東西要顯示
+  或 `hasSurvey` 就 `return next(e)`；有提示列時也先叫 `next`，往下傳的 `maxRows` 扣掉
+  `BAND_ROWS`（一列），把提示列疊在 `next` 畫回來的上面；canopy 不攔 `ui.scroll`。
+  0.3.1 回自己的樹不叫 `next`，有未推 commit 時把裝在它後面的 baton 整個蓋掉
+  （2026-10-22）。tests 的引擎替身會記下收到的 `maxRows`，另有行內外掛驗證疊放。
 - **提示列的 Button 不設 hotkey**：輸入框空著時按數字鍵會按到提示列的按鈕，
   會吃掉使用者打的數字。
 - **提示列與面板的每一行是一段 `<Text>`**（內嵌上色片段），不要拆成 flex 的

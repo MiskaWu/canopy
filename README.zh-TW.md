@@ -18,7 +18,8 @@ Claude Code 裡的 git 線圖。[English](README.md)
 
 - **輸入框上方的提示**：session 所在的分支有不在任何 remote 上的 commit 才出現，
   例如 `↑3 claude/search-api 有 3 個 commit 不在任何 remote 上  [看線圖] [先不用]`。
-  按「先不用」先收起來，分支再多一個 commit 才會回來。
+  按「先不用」先收起來，分支再多一個 commit 才會回來。其他 mod 也在輸入框上方顯示
+  東西時，提示疊在它們上面，不會把它們蓋掉。
 - **線圖面板**：按「看線圖」或打 `/canopy`。上半是 repo 的分支與狀態：未推數
   （`↑N`）、落後數（`↓N`）、在哪個 worktree、那個 worktree 的 Claude session
   是否還在跑、是否已併進主 worktree 的分支，以及分開顯示的兩種狀態：已追蹤檔案的

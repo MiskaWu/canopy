@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-10-22
+
+- The nudge above the prompt no longer hides what other mods show there. That spot is
+  shared by every mod, and the nudge used to take it whole whenever it appeared, so a
+  mod installed after canopy (baton's command cards, say) vanished as soon as the
+  branch had unpushed commits. canopy now follows the shared convention: it lets the
+  mods beneath it draw first, with one row fewer, and stacks its single row on top.
+
 ## 0.3.1 — 2026-10-06
 
 - Uncommitted changes and untracked files are told apart: `✎ 2 uncommitted` for
